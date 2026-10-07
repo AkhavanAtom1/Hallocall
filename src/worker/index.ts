@@ -13,7 +13,12 @@ type SafeUser = { id: string; username: string; avatar: string };
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,20}$/;
-const AVATARS = new Set(["aurora","ember","ocean","violet","mint","sunset","cosmic","rose","bolt","forest","pearl","lava"]);
+const AVATARS = new Set([
+  "ronaldo_red","ronaldo_white","ronaldo_black","messi_barca_blue","messi_barca_purple",
+  "ronaldinho_brazil","ronaldinho_milan","neymar_brazil","neymar_barca","dybala_juve",
+  "ronaldo_red_alt","messi_argentina","mbappe_france","van_dijk_netherlands","haaland_city",
+  "aurora","ember","ocean","violet","mint","sunset","cosmic","rose","bolt","forest","pearl","lava"
+]);
 
 function json(data: unknown, init: ResponseInit = {}) {
   return new Response(JSON.stringify(data), { ...init, headers: { "content-type": "application/json; charset=utf-8", ...(init.headers ?? {}) } });
@@ -357,9 +362,12 @@ async function api(env: Env, req: Request) {
   }
   if (path === "/api/calls/incoming" && method === "GET") {
     const auth = await requireUser(env,req); if ("response" in auth) return auth.response;
+    const cutoff = now() - 120_000;
+    await env.HALLOCALL_DB.prepare(`UPDATE call_invites SET status='expired',responded_at=?1 WHERE callee_id=?2 AND status='ringing' AND created_at<=?3`)
+      .bind(now(),auth.user.id,cutoff).run();
     const rows = await env.HALLOCALL_DB.prepare(`SELECT i.id invite_id,c.code,c.name,u.id caller_id,u.username caller_username,u.avatar caller_avatar
       FROM call_invites i JOIN calls c ON c.id=i.call_id JOIN users u ON u.id=i.caller_id WHERE i.callee_id=?1 AND i.status='ringing' AND c.status<>'ended' AND i.created_at>?2 ORDER BY i.created_at DESC LIMIT 8`)
-      .bind(auth.user.id,now()-120_000).all<{invite_id:string;code:string;name:string;caller_id:string;caller_username:string;caller_avatar:string}>();
+      .bind(auth.user.id,cutoff).all<{invite_id:string;code:string;name:string;caller_id:string;caller_username:string;caller_avatar:string}>();
     return json({ calls:rows.results.map(r=>({inviteId:r.invite_id,code:r.code,name:r.name,caller:{id:r.caller_id,username:r.caller_username,avatar:r.caller_avatar}})) });
   }
   if (path === "/api/calls/respond" && method === "POST") {
@@ -368,10 +376,14 @@ async function api(env: Env, req: Request) {
     const id = typeof body?.inviteId === "string" ? body.inviteId : "";
     const action = body?.action === "accept" ? "accepted" : body?.action === "decline" ? "declined" : null;
     if (!id || !action) return json({ error:"درخواست نامعتبر است." }, { status:400 });
-    const row = await env.HALLOCALL_DB.prepare(`SELECT i.id,c.code,i.callee_id,i.call_id FROM call_invites i JOIN calls c ON c.id=i.call_id WHERE i.id=?1 LIMIT 1`).bind(id).first<{id:string;code:string;callee_id:string;call_id:string}>();
-    if (!row || row.callee_id!==auth.user.id) return json({ error:"تماس پیدا نشد." }, { status:404 });
-    await env.HALLOCALL_DB.prepare(`UPDATE call_invites SET status=?1,responded_at=?2 WHERE id=?3`).bind(action,now(),id).run();
-    if (action === "accepted") await env.HALLOCALL_DB.prepare(`UPDATE calls SET status='active' WHERE id=?1`).bind(row.call_id).run();
+    const row = await env.HALLOCALL_DB.prepare(`SELECT i.id,c.code,c.status call_status,i.callee_id,i.call_id,i.status invite_status FROM call_invites i JOIN calls c ON c.id=i.call_id WHERE i.id=?1 LIMIT 1`).bind(id).first<{id:string;code:string;call_status:string;callee_id:string;call_id:string;invite_status:string}>();
+    if (!row || row.callee_id!==auth.user.id || row.invite_status!=="ringing" || row.call_status==="ended") return json({ error:"این تماس دیگر در دسترس نیست." }, { status:409 });
+    await env.HALLOCALL_DB.prepare(`UPDATE call_invites SET status=?1,responded_at=?2 WHERE id=?3 AND status='ringing'`).bind(action,now(),id).run();
+    if (action === "accepted") {
+      await env.HALLOCALL_DB.prepare(`UPDATE calls SET status='active' WHERE id=?1 AND status<>'ended'`).bind(row.call_id).run();
+    } else {
+      await env.HALLOCALL_DB.prepare(`UPDATE calls SET status='ended',ended_at=?1 WHERE id=?2 AND status='waiting'`).bind(now(),row.call_id).run();
+    }
     return json({ ok:true, code:action === "accepted" ? row.code : undefined });
   }
   const joinMatch = path.match(/^\/api\/calls\/([^/]+)\/join$/);
@@ -380,7 +392,19 @@ async function api(env: Env, req: Request) {
     const code = decodeURIComponent(joinMatch[1]).toUpperCase();
     const row = await env.HALLOCALL_DB.prepare(`SELECT id,code,name,host_id,status FROM calls WHERE code=?1 LIMIT 1`).bind(code).first<{id:string;code:string;name:string;host_id:string;status:string}>();
     if (!row || row.status === "ended") return json({ error:"کال پیدا نشد یا تمام شده است." }, { status:404 });
-    if (row.status === "waiting") await env.HALLOCALL_DB.prepare(`UPDATE calls SET status='active' WHERE id=?1`).bind(row.id).run();
+    const roomId = env.CALL_ROOMS.idFromName(code);
+    const roomHeaders = new Headers({ "x-user-id":auth.user.id, "x-username":auth.user.username, "x-avatar":auth.user.avatar });
+    try {
+      const stateRes = await env.CALL_ROOMS.get(roomId).fetch(new Request("https://call-room.local/state", { headers:roomHeaders }));
+      if (stateRes.ok) {
+        const state = await stateRes.json() as { participants?:Array<{id:string}> };
+        const participants = state.participants ?? [];
+        if (participants.length >= 2 && !participants.some(p=>p.id===auth.user.id)) {
+          return json({ error:"این کال در حال حاضر پر است. ظرفیت کال دو نفر است." }, { status:409 });
+        }
+      }
+    } catch {}
+    if (row.status === "waiting") await env.HALLOCALL_DB.prepare(`UPDATE calls SET status='active' WHERE id=?1 AND status='waiting'`).bind(row.id).run();
     return json({ ok:true, call:callJson({...row,status:"active"}) });
   }
   const leaveMatch = path.match(/^\/api\/calls\/([^/]+)\/leave$/);
