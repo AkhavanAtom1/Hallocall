@@ -383,7 +383,11 @@ async function api(env: Env, req: Request) {
     if (!row || row.callee_id!==auth.user.id || row.invite_status!=="ringing" || row.call_status==="ended") return json({ error:"این تماس دیگر در دسترس نیست." }, { status:409 });
     await env.HALLOCALL_DB.prepare(`UPDATE call_invites SET status=?1,responded_at=?2 WHERE id=?3 AND status='ringing'`).bind(action,now(),id).run();
     if (action === "accepted") {
-      await env.HALLOCALL_DB.prepare(`UPDATE calls SET status='active' WHERE id=?1 AND status<>'ended'`).bind(row.call_id).run();
+      const t = now();
+      await env.HALLOCALL_DB.batch([
+        env.HALLOCALL_DB.prepare(`UPDATE calls SET status='active' WHERE id=?1 AND status<>'ended'`).bind(row.call_id),
+        env.HALLOCALL_DB.prepare(`UPDATE call_invites SET status='expired',responded_at=?1 WHERE callee_id=?2 AND status='ringing' AND id<>?3`).bind(t,auth.user.id,id),
+      ]);
     } else {
       await env.HALLOCALL_DB.prepare(`UPDATE calls SET status='ended',ended_at=?1 WHERE id=?2 AND status='waiting'`).bind(now(),row.call_id).run();
     }
