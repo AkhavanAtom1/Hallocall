@@ -6,7 +6,8 @@
 
 - ثبت‌نام و ورود با Username + Password
 - هش امن رمز عبور با PBKDF2/SHA-256 در Worker Runtime
-- انتخاب آواتار هنگام ثبت‌نام و امکان تغییر آواتار از Profile
+- انتخاب آواتارهای فوتبالی هنگام ثبت‌نام و امکان تغییر آواتار از Profile
+- ۱۵ آواتار تصویری فوتبالی با sprite سبک‌وزن، glow و rim-light
 - جست‌وجوی کاربران با Username
 - Friend Request / Accept / Decline / Remove
 - Presence آنلاین/آفلاین
@@ -24,7 +25,10 @@
 - آماده برای Cloudflare TURN؛ در نبود TURN از STUN fallback استفاده می‌شود
 - Dark Mode / Light Mode
 - Responsive برای موبایل و دسکتاپ
-- CSS glow / glass / ambient orbs / subtle motion بدون نیاز به UI library
+- CSS glow / glass / ambient orbs / rim-light / hover-lift / pulse / shimmer motion بدون نیاز به UI library
+- مدیریت بهتر دعوت تماس: جلوگیری از زنگ‌زدن تکراری، انقضای دعوت‌های قدیمی و پایان درست تماس ردشده
+- بررسی ظرفیت دو نفره قبل از ورود و نمایش بهتر وضعیت پایان تماس
+- fallback اشتراک‌گذاری لینک برای مرورگرهایی که Clipboard/Share کامل ندارند
 
 ## چرا این نسخه نسبت به دو پروژه قبلی بهتر است؟
 
@@ -46,7 +50,9 @@ hallocall/
 ├─ src/
 │  ├─ App.tsx                 # UI اصلی + صفحات + Call UI
 │  ├─ main.tsx
-│  ├─ styles.css              # تم کامل و نورپردازی
+│  ├─ styles.css              # تم پایه
+│  ├─ premium.css             # لایه نورپردازی و انیمیشن حرفه‌ای
+│  ├─ assets/football-legends-avatars.b64  # منبع sprite آواتارها
 │  ├─ components/Icon.tsx
 │  ├─ lib/api.ts              # کلاینت API
 │  ├─ lib/avatars.ts
