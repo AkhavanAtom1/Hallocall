@@ -1,4 +1,10 @@
 export type AvatarId =
+  | "ronaldo_red" | "ronaldo_white" | "ronaldo_black"
+  | "messi_barca_blue" | "messi_barca_purple"
+  | "ronaldinho_brazil" | "ronaldinho_milan"
+  | "neymar_brazil" | "neymar_barca" | "dybala_juve"
+  | "ronaldo_red_alt" | "messi_argentina" | "mbappe_france"
+  | "van_dijk_netherlands" | "haaland_city"
   | "aurora" | "ember" | "ocean" | "violet" | "mint" | "sunset"
   | "cosmic" | "rose" | "bolt" | "forest" | "pearl" | "lava";
 
@@ -35,4 +41,8 @@ export type IncomingCall = {
   caller: User;
 };
 
-export type Participant = User & { muted: boolean; speaking?: boolean; connected?: boolean };
+export type Participant = User & {
+  muted: boolean;
+  speaking?: boolean;
+  connected?: boolean;
+};
