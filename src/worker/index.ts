@@ -287,6 +287,7 @@ async function api(env: Env, req: Request) {
   const method = req.method.toUpperCase();
 
   if (path === "/api/health" && method === "GET") return json({ ok:true, service:"hallocall", time:now() });
+  if (!env.HALLOCALL_DB) return json({ error:"اتصال D1 برای این Worker تنظیم نشده است." }, { status:503 });
   await ensureDatabase(env);
 
   if (path === "/api/auth/register" && method === "POST") {
