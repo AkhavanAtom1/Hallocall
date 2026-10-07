@@ -13,7 +13,7 @@
     {
       "binding": "HALLOCALL_DB",
       "database_name": "hallocall-db",
-      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID",
+      "database_id": "5833a01a-44f6-427c-9a89-f249c73c23b5",
       "migrations_dir": "migrations"
     }
   ],
