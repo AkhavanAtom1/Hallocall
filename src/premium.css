@@ -568,3 +568,55 @@ input:focus-visible {
     transition-duration: .001ms !important;
   }
 }
+
+
+/* Football avatars are always circular, including the picker. */
+.avatar-choice,
+.avatar-choice .avatar-photo,
+.avatar-choice .avatar-emoji {
+  border-radius: 50% !important;
+}
+
+.avatar-choice {
+  aspect-ratio: 1 / 1;
+  width: 100%;
+}
+
+.avatar-choice .avatar-photo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 50% !important;
+  background-size: 400% 400%;
+  background-repeat: no-repeat;
+}
+
+.avatar-choice .avatar-emoji {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+}
+
+.avatar,
+.row-avatar,
+.card-avatar,
+.tiny-avatar,
+.result-avatar,
+.big-avatar,
+.incoming-avatar,
+.chat-avatar,
+.avatar-face {
+  border-radius: 50% !important;
+}
+
+.avatar-photo {
+  clip-path: circle(50% at 50% 50%);
+}
+
+@media (max-width: 760px) {
+  .avatar-choice {
+    min-width: 0;
+  }
+}
