@@ -385,13 +385,14 @@ export class CallRoom {
   }
 }
 
-function callDO(env: Env, code:string, req:Request, user:SafeUser) {
+async function callDO(env: Env, code:string, req:Request, user:SafeUser): Promise<Response> {
   const id = env.CALL_ROOMS.idFromName(code);
   const headers = new Headers(req.headers);
   headers.set("x-user-id", user.id);
   headers.set("x-username", user.username);
   headers.set("x-avatar", user.avatar);
-  return env.CALL_ROOMS.get(id).fetch(new Request(req, { headers }));
+  const response = await env.CALL_ROOMS.get(id).fetch(new Request(req, { headers }));
+  return response ?? new Response("Call room unavailable", { status:503 });
 }
 
 async function ensureAuthDatabase(env: Env) {
