@@ -1,38 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { FormEvent, ReactNode } from "react";
+import type { CSSProperties, FormEvent, ReactNode } from "react";
 import { api } from "./lib/api";
-import { avatarOf, AVATARS } from "./lib/avatars";
+import { AVATAR_CATEGORIES, AVATARS, DEFAULT_AVATAR, avatarOf } from "./lib/avatars";
 import { getIceServers, applyAudioQuality } from "./lib/webrtc";
 import type { CallInfo, Friend, FriendRequest, IncomingCall, Participant, User } from "./lib/types";
 import { Icon } from "./components/Icon";
+import { AvatarImage } from "./components/AvatarImage";
+import { AvatarPicker } from "./components/AvatarPicker";
+import { AppAvatar } from "./components/AppAvatar";
+import { APP_AVATAR, APP_AVATAR_DEF } from "./lib/appIdentity";
+import { GlowButton } from "./components/GlowButton";
+import { Scene, spotlight } from "./components/Scene";
 import { CALL_CODE_LENGTH, MAX_CALL_PARTICIPANTS } from "./lib/call";
 
 const QUICK_EMOJIS = ["😂","❤️","👍","🔥","🎉","😮","👏","🙌","💯","✨","🥳","👀"];
-
-function AvatarImage({ avatar }: { avatar: ReturnType<typeof avatarOf> }) {
-  if (!avatar.src || !avatar.sprite) {
-    return <span className="avatar-emoji" aria-hidden="true">{avatar.emoji}</span>;
-  }
-  const [x, y] = avatar.sprite;
-  return (
-    <span
-      className="avatar-photo"
-      role="img"
-      aria-label={avatar.label}
-      style={{
-        backgroundImage: `url(${avatar.src})`,
-        backgroundPosition: `${x / 3 * 100}% ${y / 3 * 100}%`,
-      }}
-    />
-  );
-}
+const SHOWCASE = ["ronaldo_red","messi_barca_blue","ronaldinho_brazil","haaland_city","malenia","kratos","solaire","geralt"];
 
 async function copyText(value: string) {
   try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(value);
-      return true;
-    }
+    if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(value); return true; }
   } catch {}
   try {
     const input = document.createElement("textarea");
@@ -45,16 +31,15 @@ async function copyText(value: string) {
     const ok = document.execCommand("copy");
     input.remove();
     return ok;
-  } catch {
-    return false;
-  }
+  } catch { return false; }
 }
 
-type Route = { page:"login" } | { page:"dashboard" } | { page:"friends" } | { page:"calls" } | { page:"call"; code:string };
+type Route = { page:"login" } | { page:"dashboard" } | { page:"friends" } | { page:"profiles" } | { page:"calls" } | { page:"call"; code:string };
 
 function routeFromPath(path = location.pathname): Route {
   if (path.startsWith("/call/")) return { page:"call", code:decodeURIComponent(path.slice(6)).toUpperCase() };
   if (path === "/friends") return { page:"friends" };
+  if (path === "/profiles") return { page:"profiles" };
   if (path === "/calls") return { page:"calls" };
   if (path === "/login" || path === "/") return { page:"login" };
   return { page:"dashboard" };
@@ -85,6 +70,7 @@ export function App() {
 
   const logout=async()=>{ await api.logout().catch(()=>{}); setUser(null); go("/login"); };
   const signIn=(u:User)=>{ setUser(u); go("/dashboard"); };
+  const applyAvatar=async(avatarId:string)=>{ try{ const d=await api.profile(avatarId); setUser(d.user); setToast(`پروفایل ${avatarOf(avatarId).name} ذخیره شد`); return true; } catch(e){ setToast(e instanceof Error?e.message:"ذخیره نشد"); return false; } };
   const respondIncoming=async(action:"accept"|"decline")=>{ if(!incoming) return; try { const d=await api.respondCall(incoming.inviteId,action); const code=d.code; setIncoming(null); if(action==="accept" && code) go(`/call/${code}`); } catch(e){setToast(e instanceof Error?e.message:"خطا")}; };
 
   if (booting) return <BootScreen dark={dark} />;
@@ -95,80 +81,206 @@ export function App() {
 
   return <>
     <AppShell user={user} route={route} go={go} dark={dark} setDark={setDark} logout={logout} openProfile={()=>setProfileOpen(true)}>
-      {effectivePage==="dashboard" && <Dashboard user={user} go={go} onToast={setToast}/>} 
-      {effectivePage==="friends" && <Friends user={user} go={go} onToast={setToast}/>} 
-      {effectivePage==="calls" && <Calls go={go} onToast={setToast}/>} 
+      {effectivePage==="dashboard" && <Dashboard user={user} go={go} onToast={setToast}/>}
+      {effectivePage==="friends" && <Friends user={user} go={go} onToast={setToast}/>}
+      {effectivePage==="profiles" && <Profiles user={user} onApply={applyAvatar}/>}
+      {effectivePage==="calls" && <Calls go={go} onToast={setToast}/>}
     </AppShell>
     {incoming && <IncomingOverlay call={incoming} onAccept={()=>respondIncoming("accept")} onDecline={()=>respondIncoming("decline")} />}
-    {profileOpen && <ProfileModal user={user} onClose={()=>setProfileOpen(false)} onSave={(u)=>{setUser(u);setProfileOpen(false);setToast("آواتارت ذخیره شد")}} />}
-    {toast && <div className="toast glass">{toast}</div>}
+    {profileOpen && <ProfileModal user={user} onClose={()=>setProfileOpen(false)} onApply={async(id)=>{ const ok=await applyAvatar(id); if(ok) setProfileOpen(false); return ok; }} />}
+    {toast && <div className="toast glass"><Icon name="check" size={14}/><span>{toast}</span></div>}
   </>;
 }
 
-function BootScreen({dark}:{dark:boolean}) { return <div className="app-bg boot"><div className="brand-mark"><span>◈</span></div><div className="spinner"/><p>در حال آماده‌سازی HalloCall</p><small>{dark?"حالت تاریک":"حالت روشن"}</small></div> }
+function BootScreen({dark}:{dark:boolean}) {
+  return <div className="app-bg boot"><Scene/><div className="boot-core"><AppAvatar size={76} className="boot-avatar"/><div className="spinner"/><p>در حال آماده‌سازی HalloCall</p><small>{dark?"حالت تاریک":"حالت روشن"} • نورپردازی استادیوم روشن شد</small></div></div>;
+}
+
+/* ─────────────────────────── auth ─────────────────────────── */
 
 function LoginPage({onSuccess,dark,setDark}:{onSuccess:(u:User)=>void;dark:boolean;setDark:(v:boolean)=>void}) {
-  const [mode,setMode]=useState<"login"|"register">("login"); const [username,setUsername]=useState(""); const [password,setPassword]=useState(""); const [avatar,setAvatar]=useState(AVATARS[0].id); const [busy,setBusy]=useState(false); const [error,setError]=useState("");
+  const [mode,setMode]=useState<"login"|"register">("login");
+  const [username,setUsername]=useState("");
+  const [password,setPassword]=useState("");
+  const [avatar,setAvatar]=useState<string>(DEFAULT_AVATAR);
+  const [busy,setBusy]=useState(false);
+  const [error,setError]=useState("");
   const submit=async(e:FormEvent)=>{e.preventDefault();setBusy(true);setError("");try{const d=mode==="login"?await api.login(username,password):await api.register(username,password,avatar);onSuccess(d.user);}catch(err){setError(err instanceof Error?err.message:"خطایی رخ داد.")}finally{setBusy(false)}};
+
   return <main className="auth-page app-bg">
-    <div className="aurora a1"/><div className="aurora a2"/><div className="aurora a3"/>
-    <button className="icon-btn theme-btn" onClick={()=>setDark(!dark)} aria-label="theme"><Icon name={dark?"sun":"moon"}/></button>
+    <Scene variant="auth"/>
+    <button className="icon-btn theme-btn" onClick={()=>setDark(!dark)} aria-label="تغییر تم"><Icon name={dark?"sun":"moon"}/></button>
+
     <section className="auth-hero">
-      <div className="brand-lockup"><div className="brand-mark large"><span>◈</span></div><div><h1>Hallo<span>Call</span></h1><p>Voice calls, friends, zero clutter.</p></div></div>
-      <div className="hero-copy"><span className="eyebrow"><i/> ساخته‌شده برای تماس‌های گروهی</span><h2>یک تماس.<br/><em>یک حلقه نور.</em><br/>و تمام.</h2><p>دوستت را با یوزرنیم پیدا کن، تماس بگیر یا یک اتاق خصوصی بساز و تا ۲۰ نفر را با یک کد ساده دور هم جمع کن.</p></div>
-      <div className="feature-row"><Feature icon="users" title="Friends" text="دوستان آنلاین را ببین"/><Feature icon="call" title="One‑tap call" text="تماس مستقیم با یک کلیک"/><Feature icon="signal" title="Adaptive audio" text="کنترل کیفیت برای اینترنت ضعیف"/></div>
+      <div className="brand-lockup">
+        <AppAvatar size={64} className="brand-avatar"/>
+        <div><h1>Hallo<span>Call</span></h1><p>voice • friends • zero clutter</p></div>
+      </div>
+      <div className="hero-copy">
+        <span className="eyebrow"><i/> ساخته‌شده برای تماس‌های گروهی</span>
+        <h2>یک تماس.<br/><em>یک حلقه نور.</em><br/>و تمام.</h2>
+        <p>دوستت را با یوزرنیم پیدا کن، تماس بگیر یا یک اتاق خصوصی بساز و تا ۲۰ نفر را با یک کد ساده دور هم جمع کن.</p>
+      </div>
+      <div className="feature-row">
+        <Feature icon="users" title="Friends" text="دوستان آنلاین را ببین"/>
+        <Feature icon="call" title="One‑tap call" text="تماس مستقیم با یک کلیک"/>
+        <Feature icon="signal" title="Adaptive audio" text="کنترل کیفیت برای اینترنت ضعیف"/>
+      </div>
+      <div className="avatar-ticker" aria-hidden="true">
+        <div className="ticker-track">
+          {[...SHOWCASE,...SHOWCASE].map((id,i)=><span key={`${id}-${i}`} style={{"--accent":avatarOf(id).accent} as CSSProperties}><AvatarImage avatar={id}/></span>)}
+        </div>
+        <b>{AVATARS.length} پروفایل تازه • فوتبال و گیمینگ</b>
+      </div>
     </section>
-    <section className="auth-card glass">
+
+    <section className="auth-card glass" onMouseMove={spotlight}>
+      <div className="card-lamp" aria-hidden="true"/>
       <div className="auth-card-top"><div><p className="muted">خوش آمدی</p><h3>{mode==="login"?"وارد حساب شو":"حساب خودت را بساز"}</h3></div><div className="mini-status"><span/> آنلاین در هر دو حالت</div></div>
       <div className="segmented"><button className={mode==="login"?"active":""} onClick={()=>setMode("login")}>ورود</button><button className={mode==="register"?"active":""} onClick={()=>setMode("register")}>ثبت‌نام</button></div>
       {error&&<div className="error-box"><Icon name="info" size={17}/><span>{error}</span></div>}
       <form onSubmit={submit}>
-        <Field label="نام کاربری" value={username} onChange={setUsername} placeholder="مثلاً ali_23" dir="ltr" />
-        <Field label="رمز عبور" type="password" value={password} onChange={setPassword} placeholder="حداقل ۶ کاراکتر" dir="ltr" />
-        {mode==="register"&&<div className="avatar-picker"><div className="field-label"><span>آواتار فوتبالی پروفایل</span><small>از ۱۵ آواتار لیگندری انتخاب کن</small></div><div className="avatar-grid">{AVATARS.map(a=><button type="button" key={a.id} title={a.label} aria-label={a.label} className={avatar===a.id?"avatar-choice selected":"avatar-choice"} onClick={()=>setAvatar(a.id)} style={{background:a.gradient,boxShadow:avatar===a.id?`0 0 0 3px var(--panel),0 0 0 5px ${a.glow}`:undefined}}><AvatarImage avatar={a}/></button>)}</div></div>}
-        <button disabled={busy} className="primary-btn wide">{busy?<><span className="tiny-spinner"/>در حال ورود...</>:<>{mode==="login"?"ورود به HalloCall":"ساخت حساب و ورود"}<Icon name="arrow" size={18}/></>}</button>
+        <Field label="نام کاربری" value={username} onChange={setUsername} placeholder="مثلاً ali_23" dir="ltr"/>
+        <Field label="رمز عبور" type="password" value={password} onChange={setPassword} placeholder="حداقل ۶ کاراکتر" dir="ltr"/>
+        {mode==="register"&&<AvatarPicker value={avatar} onChange={setAvatar} variant="compact"/>}
+        <GlowButton className="wide" type="submit" tone="primary" size="lg" disabled={busy} trailingIcon={busy?undefined:"arrow"} loading={busy?<span className="tiny-spinner"/>:undefined}>{busy?"در حال ورود...":mode==="login"?"ورود به HalloCall":"ساخت حساب و ورود"}</GlowButton>
       </form>
       <div className="security-note"><span>●</span> رمز عبور به‌صورت هش‌شده ذخیره می‌شود</div>
     </section>
-  </main>
+  </main>;
 }
+
 function Field({label,type="text",value,onChange,placeholder,dir}:{label:string;type?:string;value:string;onChange:(s:string)=>void;placeholder:string;dir?:string}){return <label className="field"><span>{label}</span><input dir={dir} type={type} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} required /></label>}
 function Feature({icon,title,text}:{icon:string;title:string;text:string}){return <div className="feature glass"><div className="feature-icon"><Icon name={icon}/></div><div><b>{title}</b><span>{text}</span></div></div>}
 
+/* ─────────────────────────── shell ─────────────────────────── */
+
 function AppShell({user,route,go,dark,setDark,logout,openProfile,children}:{user:User;route:Route;go:(s:string)=>void;dark:boolean;setDark:(v:boolean)=>void;logout:()=>void;openProfile:()=>void;children:ReactNode}){
-  const avatar=avatarOf(user.avatar); return <div className="app-bg shell"><div className="aurora a1"/><div className="aurora a2"/>
+  const avatar=avatarOf(user.avatar);
+  return <div className="app-bg shell">
+    <Scene/>
     <aside className="sidebar glass">
-      <div className="sidebar-brand"><div className="brand-mark"><span>◈</span></div><div><b>Hallo<span>Call</span></b><small>voice workspace</small></div></div>
-      <nav><NavItem icon="spark" label="خانه" active={route.page==="dashboard"} onClick={()=>go("/dashboard")}/><NavItem icon="users" label="فرندها" active={route.page==="friends"} onClick={()=>go("/friends")}/><NavItem icon="call" label="کال‌ها" active={route.page==="calls"} onClick={()=>go("/calls")}/></nav>
+      <div className="sidebar-brand"><AppAvatar size={40} className="brand-avatar"/><div><b>Hallo<span>Call</span></b><small>voice workspace</small></div></div>
+      <nav>
+        <NavItem icon="spark" label="خانه" active={route.page==="dashboard"} onClick={()=>go("/dashboard")}/>
+        <NavItem icon="users" label="فرندها" active={route.page==="friends"} onClick={()=>go("/friends")}/>
+        <NavItem icon="mask" label="پروفایل‌ها" active={route.page==="profiles"} onClick={()=>go("/profiles")}/>
+        <NavItem icon="call" label="کال‌ها" active={route.page==="calls"} onClick={()=>go("/calls")}/>
+      </nav>
       <div className="sidebar-spacer"/>
-      <button className="profile-chip" onClick={openProfile}><div className="avatar" style={{background:avatar.gradient,boxShadow:`0 0 22px ${avatar.glow}`}}><AvatarImage avatar={avatar}/><span className="online-dot"/></div><div className="profile-text"><b>{user.username}</b><span>آنلاین</span></div><Icon name="settings" size={17}/></button>
-      <div className="sidebar-actions"><button className="icon-btn" onClick={()=>setDark(!dark)} title="تغییر تم"><Icon name={dark?"sun":"moon"}/></button><button className="icon-btn danger-lite" onClick={logout} title="خروج"><Icon name="logout"/></button></div>
+      <button className="profile-chip" onClick={openProfile} onMouseMove={spotlight}>
+        <div className="avatar" style={{"--accent":avatar.accent, boxShadow:`0 0 0 1px ${avatar.ring}, 0 0 26px ${avatar.glow}`} as CSSProperties}><AvatarImage avatar={avatar}/><span className="online-dot"/></div>
+        <div className="profile-text"><b>{user.username}</b><span>{avatar.name} • {avatar.tag}</span></div>
+        <Icon name="settings" size={17}/>
+      </button>
+      <div className="sidebar-actions">
+        <button className="icon-btn" onClick={()=>setDark(!dark)} title="تغییر تم"><Icon name={dark?"sun":"moon"}/></button>
+        <button className="icon-btn" onClick={openProfile} title="انتخاب آواتار"><Icon name="mask"/></button>
+        <button className="icon-btn danger-lite" onClick={logout} title="خروج"><Icon name="logout"/></button>
+      </div>
     </aside>
     <main className="content">{children}</main>
-  </div>
+  </div>;
 }
-function NavItem({icon,label,active,onClick}:{icon:string;label:string;active:boolean;onClick:()=>void}){return <button onClick={onClick} className={active?"nav-item active":"nav-item"}><span className="nav-icon"><Icon name={icon}/></span><span>{label}</span>{active&&<i/>}</button>}
+
+function NavItem({icon,label,active,onClick}:{icon:string;label:string;active:boolean;onClick:()=>void}){
+  return <button onClick={onClick} className={active?"nav-item active":"nav-item"}><span className="nav-icon"><Icon name={icon}/></span><span>{label}</span>{active&&<i/>}</button>;
+}
+
+function PageTop({eyebrow,title,desc,action}:{eyebrow:string;title:string;desc:string;action?:ReactNode}){
+  return <header className="page-top"><div><span className="eyebrow"><i/>{eyebrow}</span><h1>{title}</h1><p>{desc}</p></div><div className="top-actions">{action}<div className="live-pill"><span/> سرویس آنلاین <small>•</small> WebRTC ready</div></div></header>;
+}
+
+/* ─────────────────────────── home ─────────────────────────── */
 
 function Dashboard({user,go,onToast}:{user:User;go:(s:string)=>void;onToast:(s:string)=>void}){
-  const [friends,setFriends]=useState<Friend[]>([]); useEffect(()=>{api.friends().then(d=>setFriends(d.friends)).catch(()=>{});},[]); const online=friends.filter(f=>f.online);
+  const [friends,setFriends]=useState<Friend[]>([]);
+  useEffect(()=>{api.friends().then(d=>setFriends(d.friends)).catch(()=>{});},[]);
+  const online=friends.filter(f=>f.online);
   const quickCall=async(friend:Friend)=>{try{const d=await api.invite(friend.id);onToast(`درخواست تماس برای ${friend.username} ارسال شد`);go(`/call/${d.call.code}`);}catch(e){onToast(e instanceof Error?e.message:"خطا")}};
-  return <div className="page"><PageTop eyebrow="WORKSPACE" title={`سلام ${user.username} 👋`} desc="همه‌چیز برای یک تماس سریع آماده است."/><section className="dashboard-grid">
-    <div className="hero-card glass"><div className="hero-glow"/><div className="hero-content"><span className="eyebrow"><i/> ONLINE VOICE</span><h2>صدای دوستت<br/><em>همین نزدیکی است.</em></h2><p>از لیست فرندها یک تماس مستقیم بگیر یا یک کال بساز و لینک آن را بفرست.</p><div className="hero-actions"><button className="primary-btn" onClick={()=>go("/calls")}><Icon name="call"/> ساخت کال</button><button className="ghost-btn" onClick={()=>go("/friends")}><Icon name="users"/> مدیریت فرندها</button></div></div><div className="hero-orbit"><div className="orbit-ring r1"/><div className="orbit-ring r2"/><div className="orbit-core">🎧</div></div></div>
-    <div className="stat-card glass"><div className="stat-icon green"><Icon name="users"/></div><div><span>فرندهای آنلاین</span><b>{online.length}</b></div><button onClick={()=>go("/friends")}>مشاهده <Icon name="arrow" size={15}/></button></div>
-    <div className="stat-card glass"><div className="stat-icon purple"><Icon name="signal"/></div><div><span>کیفیت هوشمند</span><b>12–96 kbps</b></div><button onClick={()=>go("/calls")}>تنظیمات <Icon name="arrow" size={15}/></button></div>
-  </section><section className="section-head"><div><h3>فرندهای آنلاین</h3><p>برای تماس، یک نفر را انتخاب کن.</p></div><button className="text-btn" onClick={()=>go("/friends")}>همه فرندها <Icon name="arrow" size={15}/></button></section>
-  <div className="friend-strip">{online.slice(0,6).map(f=><FriendCard key={f.id} friend={f} onCall={()=>quickCall(f)}/>)}{online.length===0&&<EmptyCard title="فعلاً کسی آنلاین نیست" text="وقتی یکی از فرندها آنلاین شود، دکمه تماس اینجا ظاهر می‌شود." icon="moon"/>}</div>
-</div>
+
+  return <div className="page">
+    <PageTop eyebrow="WORKSPACE" title={`سلام ${user.username} 👋`} desc="همه‌چیز برای یک تماس سریع آماده است." action={<GlowButton tone="ghost" size="sm" icon="mask" onClick={()=>go("/profiles")}>گالری پروفایل</GlowButton>}/>
+
+    <section className="dashboard-grid">
+      <div className="hero-card glass" onMouseMove={spotlight}>
+        <div className="card-lamp" aria-hidden="true"/>
+        <div className="hero-content">
+          <span className="eyebrow"><i/> ONLINE VOICE</span>
+          <h2>صدای دوستت<br/><em>همین نزدیکی است.</em></h2>
+          <p>از لیست فرندها یک تماس مستقیم بگیر یا یک کال بساز و لینک آن را بفرست.</p>
+          <div className="hero-actions">
+            <GlowButton tone="primary" size="lg" icon="call" onClick={()=>go("/calls")}>ساخت کال</GlowButton>
+            <GlowButton tone="ghost" size="lg" icon="users" onClick={()=>go("/friends")}>مدیریت فرندها</GlowButton>
+          </div>
+        </div>
+        <div className="hero-orbit"><div className="orbit-ring r1"><span className="orbit-sat s1"><AvatarImage avatar={SHOWCASE[0]}/></span></div><div className="orbit-ring r2"><span className="orbit-sat s2"><AvatarImage avatar={SHOWCASE[3]}/></span></div><div className="orbit-core">🎧</div></div>
+      </div>
+
+      <div className="stat-card glass" onMouseMove={spotlight}>
+        <div className="stat-icon green"><Icon name="users"/></div>
+        <div><span>فرندهای آنلاین</span><b>{online.length}</b></div>
+        <div className="spark-bars" aria-hidden="true">{[38,62,44,78,52,88,66].map((h,i)=><i key={i} style={{height:`${h}%`,animationDelay:`${i*.12}s`} as CSSProperties}/>)}</div>
+        <button onClick={()=>go("/friends")}>مشاهده <Icon name="arrow" size={15}/></button>
+      </div>
+
+      <div className="stat-card glass" onMouseMove={spotlight}>
+        <div className="stat-icon purple"><Icon name="signal"/></div>
+        <div><span>کیفیت هوشمند</span><b>12–96 kbps</b></div>
+        <div className="spark-bars" aria-hidden="true">{[54,32,72,46,88,60,40].map((h,i)=><i key={i} style={{height:`${h}%`,animationDelay:`${i*.12}s`} as CSSProperties}/>)}</div>
+        <button onClick={()=>go("/calls")}>تنظیمات <Icon name="arrow" size={15}/></button>
+      </div>
+    </section>
+
+    <section className="section-head"><div><h3>فرندهای آنلاین</h3><p>برای تماس، یک نفر را انتخاب کن.</p></div><button className="text-btn" onClick={()=>go("/friends")}>همه فرندها <Icon name="arrow" size={15}/></button></section>
+    <div className="friend-strip">
+      {online.slice(0,6).map(f=><FriendCard key={f.id} friend={f} onCall={()=>quickCall(f)}/>)}
+      {online.length===0&&<EmptyCard title="فعلاً کسی آنلاین نیست" text="وقتی یکی از فرندها آنلاین شود، دکمه تماس اینجا ظاهر می‌شود." icon="moon"/>}
+    </div>
+
+    <section className="collection-card glass" onMouseMove={spotlight}>
+      <div className="collection-head">
+        <div><span className="eyebrow"><i/> NEW AVATAR SET</span><h3>۳۰ پروفایل تازه برای انتخاب</h3><p>{AVATAR_CATEGORIES.map(c=>`${c.icon} ${c.fa}`).join("  •  ")}</p></div>
+        <GlowButton tone="cyan" icon="spark" onClick={()=>go("/profiles")}>باز کردن گالری</GlowButton>
+      </div>
+      <div className="collection-strip">{AVATARS.slice(0,14).map(a=><span key={a.id} title={a.label} style={{"--accent-glow":a.glow} as CSSProperties}><AvatarImage avatar={a}/></span>)}</div>
+    </section>
+  </div>;
 }
-function PageTop({eyebrow,title,desc}:{eyebrow:string;title:string;desc:string}){return <header className="page-top"><div><span className="eyebrow">{eyebrow}</span><h1>{title}</h1><p>{desc}</p></div><div className="live-pill"><span/> سرویس آنلاین <small>•</small> WebRTC ready</div></header>}
-function FriendCard({friend,onCall}:{friend:Friend;onCall:()=>void}){const a=avatarOf(friend.avatar);return <div className="friend-card glass"><div className="card-avatar" style={{background:a.gradient,boxShadow:`0 0 24px ${a.glow}`}}><AvatarImage avatar={a}/><span className="speck"/></div><div className="card-user"><b>{friend.username}</b><span><i/> آنلاین</span></div><button className="call-mini" onClick={onCall}><Icon name="call" size={17}/></button></div>}
+
+function FriendCard({friend,onCall}:{friend:Friend;onCall:()=>void}){
+  const a=avatarOf(friend.avatar);
+  return <div className="friend-card glass" onMouseMove={spotlight}>
+    <div className="card-avatar" style={{"--accent":a.accent, background:a.gradient} as CSSProperties}><AvatarImage avatar={a}/><span className="speck"/></div>
+    <div className="card-user"><b>{friend.username}</b><span><i/> آنلاین</span></div>
+    <GlowButton tone="mint" size="sm" className="call-mini" icon="call" onClick={onCall} aria-label={`تماس با ${friend.username}`}/>
+  </div>;
+}
+
 function EmptyCard({title,text,icon}:{title:string;text:string;icon:string}){return <div className="empty-card glass"><div className="empty-icon"><Icon name={icon}/></div><div><b>{title}</b><p>{text}</p></div></div>}
 
-function FriendRow({friend,onCall,onRemove}:{friend:Friend;onCall:()=>void;onRemove?:()=>void}){const a=avatarOf(friend.avatar);return <div className="friend-row glass"><div className="row-avatar" style={{background:a.gradient,boxShadow:`0 0 20px ${a.glow}`}}><AvatarImage avatar={a}/><span className={friend.online?"online-ring on":"online-ring"}/></div><div className="row-user"><b>{friend.username}</b><span className={friend.online?"online-label":"offline-label"}>{friend.online?"● آنلاین":"○ آفلاین"}</span></div><div className="row-actions">{friend.online?<button onClick={onCall} className="primary-mini"><Icon name="call" size={16}/> تماس</button>:<span className="offline-note">الان در دسترس نیست</span>}{onRemove&&<button onClick={onRemove} className="row-remove" title={`حذف ${friend.username} از فرندها`} aria-label={`حذف ${friend.username} از فرندها`}><Icon name="x" size={15}/></button>}</div></div>}
+/* ─────────────────────────── friends ─────────────────────────── */
+
+function FriendRow({friend,onCall,onRemove}:{friend:Friend;onCall:()=>void;onRemove?:()=>void}){
+  const a=avatarOf(friend.avatar);
+  return <div className="friend-row glass" onMouseMove={spotlight}>
+    <div className="row-avatar" style={{"--accent":a.accent, background:a.gradient} as CSSProperties}><AvatarImage avatar={a}/><span className={friend.online?"online-ring on":"online-ring"}/></div>
+    <div className="row-user"><b>{friend.username}</b><span className={friend.online?"online-label":"offline-label"}>{friend.online?"● آنلاین":"○ آفلاین"}</span></div>
+    <div className="row-actions">
+      {friend.online?<GlowButton tone="primary" size="sm" icon="call" onClick={onCall}>تماس</GlowButton>:<span className="offline-note">الان در دسترس نیست</span>}
+      {onRemove&&<button onClick={onRemove} className="row-remove" title={`حذف ${friend.username} از فرندها`} aria-label={`حذف ${friend.username} از فرندها`}><Icon name="x" size={15}/></button>}
+    </div>
+  </div>;
+}
 
 function Friends({user,go,onToast}:{user:User;go:(s:string)=>void;onToast:(s:string)=>void}){
-  const [friends,setFriends]=useState<Friend[]>([]); const [requests,setRequests]=useState<FriendRequest[]>([]); const [q,setQ]=useState(""); const [results,setResults]=useState<User[]>([]); const timer=useRef<number | undefined>(undefined);
-  const load=useCallback(()=>api.friends().then(d=>{setFriends(d.friends);setRequests(d.requests)}).catch(()=>{}),[]); useEffect(()=>{load();const id=setInterval(load,9000);return()=>clearInterval(id)},[load]);
+  const [friends,setFriends]=useState<Friend[]>([]);
+  const [requests,setRequests]=useState<FriendRequest[]>([]);
+  const [q,setQ]=useState("");
+  const [results,setResults]=useState<User[]>([]);
+  const timer=useRef<number | undefined>(undefined);
+  const load=useCallback(()=>api.friends().then(d=>{setFriends(d.friends);setRequests(d.requests)}).catch(()=>{}),[]);
+  useEffect(()=>{load();const id=setInterval(load,9000);return()=>clearInterval(id)},[load]);
   const search=(value:string)=>{setQ(value);window.clearTimeout(timer.current);timer.current=window.setTimeout(()=>{if(value.trim().length>=2)api.searchUsers(value.trim()).then(d=>setResults(d.users)).catch(()=>setResults([]));else setResults([])},260)};
   const relationFor=(id:string)=>{if(friends.some(f=>f.id===id))return "friend" as const;const request=requests.find(r=>r.id===id);return request?.direction==="incoming"?"incoming":request?"outgoing":"none" as const};
   const add=async(id:string)=>{try{await api.friendRequest(id);onToast("درخواست دوستی ارسال شد");setResults([]);setQ("");load()}catch(e){onToast(e instanceof Error?e.message:"خطا")}};
@@ -176,26 +288,174 @@ function Friends({user,go,onToast}:{user:User;go:(s:string)=>void;onToast:(s:str
   const cancelRequest=async(id:string)=>{try{await api.friendRemove(id);onToast("درخواست لغو شد");load()}catch(e){onToast(e instanceof Error?e.message:"خطا")}};
   const removeFriend=async(friend:Friend)=>{if(!window.confirm(`فرند ${friend.username} حذف شود؟`))return;try{await api.friendRemove(friend.friendshipId);onToast(`${friend.username} از فرندها حذف شد`);load()}catch(e){onToast(e instanceof Error?e.message:"خطا")}};
   const call=async(f:Friend)=>{try{const d=await api.invite(f.id);onToast(`درخواست تماس برای ${f.username} ارسال شد`);go(`/call/${d.call.code}`)}catch(e){onToast(e instanceof Error?e.message:"خطا")}};
-  return <div className="page"><PageTop eyebrow="FRIENDS" title="فرندهای من" desc="یوزرنیم پیدا کن، درخواست بفرست، قبول کن و با یک کلیک وارد تماس شو."/>
-    <section className="friends-layout"><div className="friends-main"><div className="panel-head"><div><h3>جست‌وجوی سریع</h3><p>نام کاربری دوستت را بنویس؛ درخواست از همین‌جا مدیریت می‌شود.</p></div><div className="search-wrap"><Icon name="search" size={18}/><input value={q} onChange={e=>search(e.target.value)} placeholder="search username..." dir="ltr"/></div></div>
-      {results.length>0&&<div className="search-results glass">{results.map(r=>{const a=avatarOf(r.avatar);const relation=relationFor(r.id);const label=relation==="friend"?"فرند شما":relation==="incoming"?"پاسخ بده":relation==="outgoing"?"در انتظار":"+ افزودن";return <div className="result-row" key={r.id}><div className="result-avatar" style={{background:a.gradient}}><AvatarImage avatar={a}/></div><div><b>{r.username}</b><span>{relation==="incoming"?"برای شما درخواست فرستاده است":"عضو HalloCall"}</span></div><button onClick={()=>relation==="none"?add(r.id):undefined} disabled={relation!=="none"} className={relation==="none"?"secondary-btn":"secondary-btn is-disabled"}>{label}</button></div>})}</div>}
-      <div className="section-head compact"><div><h3>فرندها <span className="count">{friends.length}</span></h3><p>{friends.filter(f=>f.online).length} نفر آنلاین</p></div></div>
-      <div className="friends-list">{friends.map(f=><FriendRow key={f.id} friend={f} onCall={()=>call(f)} onRemove={()=>removeFriend(f)} />)}{!friends.length&&<EmptyCard title="هنوز فرندی نداری" text="از بالای صفحه یوزرنیم دوستت را پیدا کن و درخواست بفرست." icon="users"/>}</div>
-    </div>
-    <aside className="request-panel glass"><div className="panel-title"><div className="stat-icon purple"><Icon name="users"/></div><div><h3>درخواست‌ها</h3><p>درخواست‌ها را قبول، رد یا لغو کن.</p></div></div>{requests.map(r=><div className="request-row" key={r.friendshipId}><div className="tiny-avatar" style={{background:avatarOf(r.avatar).gradient}}><AvatarImage avatar={avatarOf(r.avatar)}/></div><div className="request-copy"><b>{r.username}</b><span>{r.direction==="incoming"?"درخواست دوستی برای شما":"در انتظار پاسخ او"}</span></div>{r.direction==="incoming"?<div className="request-actions"><button onClick={()=>respond(r.friendshipId,"accept")} className="round-green" title="قبول درخواست"><Icon name="check" size={16}/></button><button onClick={()=>respond(r.friendshipId,"decline")} className="round-red" title="رد درخواست"><Icon name="x" size={16}/></button></div>:<button onClick={()=>cancelRequest(r.friendshipId)} className="pending-chip pending-button">لغو</button>}</div>)}{!requests.length&&<div className="empty-mini">درخواستی برای نمایش وجود ندارد.</div>}</aside></section></div>
+
+  return <div className="page">
+    <PageTop eyebrow="FRIENDS" title="فرندهای من" desc="یوزرنیم پیدا کن، درخواست بفرست، قبول کن و با یک کلیک وارد تماس شو."/>
+    <section className="friends-layout">
+      <div className="friends-main">
+        <div className="panel-head glass"><div><h3>جست‌وجوی سریع</h3><p>نام کاربری دوستت را بنویس؛ درخواست از همین‌جا مدیریت می‌شود.</p></div><div className="search-wrap"><Icon name="search" size={18}/><input value={q} onChange={e=>search(e.target.value)} placeholder="search username..." dir="ltr"/></div></div>
+        {results.length>0&&<div className="search-results glass">{results.map(r=>{const a=avatarOf(r.avatar);const relation=relationFor(r.id);const label=relation==="friend"?"فرند شما":relation==="incoming"?"پاسخ بده":relation==="outgoing"?"در انتظار":"+ افزودن";return <div className="result-row" key={r.id}><div className="result-avatar" style={{background:a.gradient}}><AvatarImage avatar={a}/></div><div><b>{r.username}</b><span>{relation==="incoming"?"برای شما درخواست فرستاده است":"عضو HalloCall"}</span></div><button onClick={()=>relation==="none"?add(r.id):undefined} disabled={relation!=="none"} className={relation==="none"?"secondary-btn":"secondary-btn is-disabled"}>{label}</button></div>})}</div>}
+        <div className="section-head compact"><div><h3>فرندها <span className="count">{friends.length}</span></h3><p>{friends.filter(f=>f.online).length} نفر آنلاین</p></div></div>
+        <div className="friends-list">
+          {friends.map(f=><FriendRow key={f.id} friend={f} onCall={()=>call(f)} onRemove={()=>removeFriend(f)} />)}
+          {!friends.length&&<EmptyCard title="هنوز فرندی نداری" text="از بالای صفحه یوزرنیم دوستت را پیدا کن و درخواست بفرست." icon="users"/>}
+        </div>
+      </div>
+      <aside className="request-panel glass">
+        <div className="panel-title"><div className="stat-icon purple"><Icon name="users"/></div><div><h3>درخواست‌ها</h3><p>درخواست‌ها را قبول، رد یا لغو کن.</p></div></div>
+        {requests.map(r=><div className="request-row" key={r.friendshipId}>
+          <div className="tiny-avatar" style={{background:avatarOf(r.avatar).gradient}}><AvatarImage avatar={avatarOf(r.avatar)}/></div>
+          <div className="request-copy"><b>{r.username}</b><span>{r.direction==="incoming"?"درخواست دوستی برای شما":"در انتظار پاسخ او"}</span></div>
+          {r.direction==="incoming"
+            ?<div className="request-actions"><button onClick={()=>respond(r.friendshipId,"accept")} className="round-green" title="قبول درخواست"><Icon name="check" size={16}/></button><button onClick={()=>respond(r.friendshipId,"decline")} className="round-red" title="رد درخواست"><Icon name="x" size={16}/></button></div>
+            :<button onClick={()=>cancelRequest(r.friendshipId)} className="pending-chip pending-button">لغو</button>}
+        </div>)}
+        {!requests.length&&<div className="empty-mini">درخواستی برای نمایش وجود ندارد.</div>}
+      </aside>
+    </section>
+  </div>;
 }
+
+/* ─────────────────────────── profile gallery ─────────────────────────── */
+
+function Profiles({user,onApply}:{user:User;onApply:(id:string)=>Promise<boolean>}){
+  const [pending,setPending]=useState<string>(user.avatar);
+  useEffect(()=>{setPending(user.avatar)},[user.avatar]);
+  const [saving,setSaving]=useState(false);
+  const current=avatarOf(user.avatar);
+  const chosen=avatarOf(pending);
+  const dirty=pending!==user.avatar;
+  const save=async()=>{setSaving(true);const ok=await onApply(pending);setSaving(false);if(!ok)return};
+
+  return <div className="page profiles-page">
+    <PageTop eyebrow="PROFILES" title="گالری پروفایل‌ها" desc="۳۰ آواتار تازه؛ ۱۵ افسانه فوتبال، ۵ شخصیت Elden Ring، ۵ شوالیه Dark Souls و ۵ آیکون بازی."/>
+    <section className="profile-stage glass" onMouseMove={spotlight}>
+      <div className="card-lamp" aria-hidden="true"/>
+      <div className="stage-avatar" style={{"--accent":chosen.accent, background:chosen.gradient, boxShadow:`0 0 0 1px ${chosen.ring}, 0 26px 70px ${chosen.glow}`} as CSSProperties}>
+        <AvatarImage avatar={chosen}/>
+        <span className="stage-sheen" aria-hidden="true"/>
+      </div>
+      <div className="stage-copy">
+        <span className="eyebrow"><i/> {chosen.jersey}</span>
+        <h3>{chosen.name}</h3>
+        <p>{chosen.tag}{dirty?" • هنوز ذخیره نشده":` • روی پروفایل ${user.username}`}</p>
+      </div>
+      <div className="stage-actions">
+        <GlowButton tone="primary" size="lg" icon="check" disabled={!dirty||saving} loading={saving?<span className="tiny-spinner"/>:undefined} onClick={save}>{dirty?"ذخیره روی پروفایل":"پروفایل فعلی"}</GlowButton>
+        {dirty&&<GlowButton tone="ghost" size="sm" onClick={()=>setPending(user.avatar)}>بازگشت</GlowButton>}
+      </div>
+      <div className="stage-current"><span>پروفایل فعلی</span><b style={{"--accent":current.accent} as CSSProperties}><AvatarImage avatar={current}/>{current.name}</b></div>
+    </section>
+
+    {AVATAR_CATEGORIES.map(cat=>{
+      const items=AVATARS.filter(a=>a.category===cat.id);
+      return <section className="cat-section" key={cat.id}>
+        <div className="section-head"><div><span className="eyebrow"><i/>{cat.en}</span><h3>{cat.icon} {cat.fa}</h3><p>{cat.hint}</p></div><div className="count-pill">{items.length} پروفایل</div></div>
+        <div className="avatar-showcase">
+          {items.map(a=>{const active=a.id===pending;return <button type="button" key={a.id} className={active?"showcase-card on":"showcase-card"} onClick={()=>setPending(a.id)} style={{"--accent":a.accent,"--accent-glow":a.glow,"--accent-soft":a.ring} as CSSProperties}>
+            <span className="showcase-face"><AvatarImage avatar={a}/></span>
+            <span className="showcase-meta"><b>{a.name}</b><small>{a.tag}</small></span>
+            {a.id===user.avatar&&<span className="showcase-flag">فعلی</span>}
+            {active&&<span className="showcase-check"><Icon name="check" size={12} stroke={2.6}/></span>}
+          </button>})}
+        </div>
+      </section>;
+    })}
+
+    <section className="official-card glass" onMouseMove={spotlight}>
+      <AppAvatar size={84} className="official-avatar"/>
+      <div className="official-copy">
+        <span className="eyebrow"><i/> OFFICIAL PROFILE</span>
+        <h3>{APP_AVATAR.name} <small>{APP_AVATAR.tag}</small></h3>
+        <p>پروفایل مینیمال خودِ برنامه: یک نشان لوزی با حلقهٔ نئونی بنفش تا فیروزه‌ای. همین تصویر به‌عنوان فاوآیکون، هدرها و آیکون اپ استفاده می‌شود.</p>
+      </div>
+      <div className="official-preview"><AvatarImage avatar={APP_AVATAR_DEF}/></div>
+    </section>
+  </div>;
+}
+
+function ProfileModal({user,onClose,onApply}:{user:User;onClose:()=>void;onApply:(id:string)=>Promise<boolean>}){
+  const [avatar,setAvatar]=useState<string>(user.avatar);
+  const [saving,setSaving]=useState(false);
+  const chosen=avatarOf(avatar);
+  const save=async()=>{setSaving(true);await onApply(avatar);setSaving(false)};
+  return <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}>
+    <div className="profile-modal glass">
+      <div className="modal-head"><div><span className="eyebrow"><i/> PROFILE</span><h3>{user.username}</h3></div><button className="icon-btn" onClick={onClose} aria-label="بستن"><Icon name="x"/></button></div>
+      <div className="profile-preview">
+        <div className="big-avatar" style={{"--accent":chosen.accent, background:chosen.gradient, boxShadow:`0 0 0 1px ${chosen.ring}, 0 0 45px ${chosen.glow}`} as CSSProperties}><AvatarImage avatar={chosen}/></div>
+        <div><b>{chosen.name} • {chosen.tag}</b><span>در کال، وقتی حرف بزنی هاله سبز می‌گیرد.</span></div>
+      </div>
+      <AvatarPicker value={avatar} onChange={setAvatar}/>
+      <GlowButton className="wide" tone="primary" size="lg" icon="check" disabled={saving||avatar===user.avatar} loading={saving?<span className="tiny-spinner"/>:undefined} onClick={save}>{avatar===user.avatar?"بدون تغییر":"ذخیره تغییرات"}</GlowButton>
+    </div>
+  </div>;
+}
+
+/* ─────────────────────────── calls ─────────────────────────── */
 
 function Calls({go,onToast}:{go:(s:string)=>void;onToast:(s:string)=>void}){
-  const [name,setName]=useState("Friend Call"); const [code,setCode]=useState(""); const [busy,setBusy]=useState(false);
+  const [name,setName]=useState("Friend Call");
+  const [code,setCode]=useState("");
+  const [busy,setBusy]=useState(false);
   const create=async()=>{setBusy(true);try{const d=await api.createCall(name);onToast("کال ساخته شد؛ شما به‌عنوان میزبان وارد شدید.");go(`/call/${d.call.code}`)}catch(e){onToast(e instanceof Error?e.message:"خطا در ساخت کال")}finally{setBusy(false)}};
   const join=async(e:FormEvent)=>{e.preventDefault();const normalized=code.trim().toUpperCase();if(!normalized)return;try{const d=await api.getCall(normalized);if(d.call.status==="ended")throw new Error("این کال تمام شده است.");go(`/call/${d.call.code}`)}catch(e){onToast(e instanceof Error?e.message:"کال پیدا نشد")}};
-  return <div className="page"><PageTop eyebrow="CALLS" title="کال صوتی" desc={`کال بساز، کد را بالای صفحه ببین و تا ${MAX_CALL_PARTICIPANTS} نفر را دور هم جمع کن.`}/><section className="calls-grid"><div className="create-call glass"><div className="call-illustration"><div className="pulse-ring p1"/><div className="pulse-ring p2"/><div className="call-orb">🎧</div></div><div className="call-text"><span className="eyebrow"><i/> PRIVATE ROOM</span><h2>کال شخصی خودت را بساز.</h2><p>با زدن این دکمه، کال ساخته می‌شود و خودت همان لحظه به‌عنوان میزبان وارد اتاق می‌شوی. بعد کد یا لینک بالای صفحه را برای دوستانت بفرست.</p><label className="field"><span>نام کال <small>اختیاری</small></span><input value={name} onChange={e=>setName(e.target.value)} dir="rtl" maxLength={64}/></label><button className="primary-btn" onClick={create} disabled={busy}>{busy?<><span className="tiny-spinner"/>در حال ورود به کال...</>:<><Icon name="plus"/> ساخت و ورود به کال</>}</button><div className="call-flow-note"><span className="flow-step active"><b>۱</b> ساخت</span><i/><span className="flow-step active"><b>۲</b> ورود خودکار</span><i/><span className="flow-step"><b>۳</b> دعوت دوستان</span></div></div></div>
-    <div className="join-card glass"><div className="join-icon"><Icon name="link"/></div><span className="eyebrow">JOIN A CALL</span><h2>کد را وارد کن.</h2><p>اگر دوستت کد یک کال را فرستاده، اینجا واردش کن. بعد از ورود، کد همیشه بالای صفحه در دسترس است.</p><form onSubmit={join}><input value={code} onChange={e=>setCode(e.target.value.toUpperCase())} placeholder="مثلاً 7J9K2WP" dir="ltr" maxLength={CALL_CODE_LENGTH} aria-label="کد کال"/><button className="primary-btn wide">ورود به کال <Icon name="arrow"/></button></form><div className="tip"><Icon name="info" size={16}/><span>برای اینترنت ضعیف، داخل تماس می‌توانی کیفیت صدا را پایین بیاوری.</span></div></div></section><section className="quality-banner glass"><div className="quality-badge"><Icon name="signal"/></div><div><b>Adaptive Audio</b><span>کنترل کیفیت صدا از 12 تا 96 kbps؛ مناسب برای اینترنت‌های ناپایدار.</span></div><div className="quality-demo"><span>LOW</span><i/><i/><i/><i/><i/><span>HIGH</span></div></section></div>
+
+  return <div className="page">
+    <PageTop eyebrow="CALLS" title="کال صوتی" desc={`کال بساز، کد را بالای صفحه ببین و تا ${MAX_CALL_PARTICIPANTS} نفر را دور هم جمع کن.`}/>
+    <section className="calls-grid">
+      <div className="create-call glass" onMouseMove={spotlight}>
+        <div className="card-lamp" aria-hidden="true"/>
+        <div className="call-illustration">
+          <div className="pulse-ring p1"/><div className="pulse-ring p2"/><div className="pulse-ring p3"/>
+          <div className="call-orb">🎧</div>
+          <div className="call-lights" aria-hidden="true"><i/><i/><i/></div>
+        </div>
+        <div className="call-text">
+          <span className="eyebrow"><i/> PRIVATE ROOM</span>
+          <h2>کال شخصی خودت را بساز.</h2>
+          <p>با زدن این دکمه، کال ساخته می‌شود و خودت همان لحظه به‌عنوان میزبان وارد اتاق می‌شوی. بعد کد یا لینک بالای صفحه را برای دوستانت بفرست.</p>
+          <label className="field"><span>نام کال <small>اختیاری</small></span><input value={name} onChange={e=>setName(e.target.value)} dir="rtl" maxLength={64}/></label>
+          <GlowButton tone="primary" size="lg" className="wide" icon="plus" disabled={busy} loading={busy?<span className="tiny-spinner"/>:undefined} onClick={create}>{busy?"در حال ورود به کال...":"ساخت و ورود به کال"}</GlowButton>
+          <div className="call-flow-note"><span className="flow-step active"><b>۱</b> ساخت</span><i/><span className="flow-step active"><b>۲</b> ورود خودکار</span><i/><span className="flow-step"><b>۳</b> دعوت دوستان</span></div>
+        </div>
+      </div>
+
+      <div className="join-card glass" onMouseMove={spotlight}>
+        <div className="join-icon"><Icon name="link"/></div>
+        <span className="eyebrow"><i/> JOIN A CALL</span>
+        <h2>کد را وارد کن.</h2>
+        <p>اگر دوستت کد یک کال را فرستاده، اینجا واردش کن. بعد از ورود، کد همیشه بالای صفحه در دسترس است.</p>
+        <form onSubmit={join}><input value={code} onChange={e=>setCode(e.target.value.toUpperCase())} placeholder="مثلاً 7J9K2WP" dir="ltr" maxLength={CALL_CODE_LENGTH} aria-label="کد کال"/><GlowButton className="wide" tone="cyan" trailingIcon="arrow">ورود به کال</GlowButton></form>
+        <div className="tip"><Icon name="info" size={16}/><span>برای اینترنت ضعیف، داخل تماس می‌توانی کیفیت صدا را پایین بیاوری.</span></div>
+      </div>
+    </section>
+
+    <section className="quality-banner glass">
+      <div className="quality-badge"><Icon name="signal"/></div>
+      <div><b>Adaptive Audio</b><span>کنترل کیفیت صدا از 12 تا 96 kbps؛ مناسب برای اینترنت‌های ناپایدار.</span></div>
+      <div className="quality-demo"><span>LOW</span><i/><i/><i/><i/><i/><span>HIGH</span></div>
+    </section>
+  </div>;
 }
 
-function IncomingOverlay({call,onAccept,onDecline}:{call:IncomingCall;onAccept:()=>void;onDecline:()=>void}){const a=avatarOf(call.caller.avatar);return <div className="incoming-backdrop"><div className="incoming-card glass"><div className="incoming-top"><span>INCOMING CALL</span><div className="ring-dot"><i/><i/><i/></div></div><div className="incoming-avatar" style={{background:a.gradient,boxShadow:`0 0 0 8px var(--panel),0 0 60px ${a.glow}`}}><AvatarImage avatar={a}/></div><h3>{call.caller.username}</h3><p>{call.name}</p><div className="incoming-actions"><button onClick={onDecline} className="round-red big"><Icon name="phoneOff"/></button><button onClick={onAccept} className="round-green big pulse"><Icon name="call"/></button></div></div></div>}
+function IncomingOverlay({call,onAccept,onDecline}:{call:IncomingCall;onAccept:()=>void;onDecline:()=>void}){
+  const a=avatarOf(call.caller.avatar);
+  return <div className="incoming-backdrop">
+    <div className="incoming-card glass">
+      <div className="incoming-top"><span>INCOMING CALL</span><div className="ring-dot"><i/><i/><i/></div></div>
+      <div className="incoming-avatar" style={{"--accent":a.accent, background:a.gradient, boxShadow:`0 0 0 8px var(--panel), 0 0 60px ${a.glow}`} as CSSProperties}><AvatarImage avatar={a}/></div>
+      <h3>{call.caller.username}</h3>
+      <p>{call.name}</p>
+      <div className="incoming-actions">
+        <GlowButton tone="rose" size="lg" className="round-big pulse-soft" icon="phoneOff" onClick={onDecline} aria-label="رد تماس"/>
+        <GlowButton tone="mint" size="lg" className="round-big pulse" icon="call" onClick={onAccept} aria-label="پاسخ دادن"/>
+      </div>
+    </div>
+  </div>;
+}
 
-function ProfileModal({user,onClose,onSave}:{user:User;onClose:()=>void;onSave:(u:User)=>void}){const [avatar,setAvatar]=useState(user.avatar);const save=async()=>{try{const d=await api.profile(avatar);onSave(d.user)}catch{}};return <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}><div className="profile-modal glass"><div className="modal-head"><div><span className="eyebrow">PROFILE</span><h3>{user.username}</h3></div><button className="icon-btn" onClick={onClose}><Icon name="x"/></button></div><div className="profile-preview"><div className="big-avatar" style={{background:avatarOf(avatar).gradient,boxShadow:`0 0 45px ${avatarOf(avatar).glow}`}}><AvatarImage avatar={avatarOf(avatar)}/></div><div><b>آواتارت را انتخاب کن</b><span>در کال، وقتی حرف بزنی هاله سبز می‌گیرد.</span></div></div><div className="avatar-grid large">{AVATARS.map(a=><button type="button" key={a.id} title={a.label} aria-label={a.label} className={avatar===a.id?"avatar-choice selected":"avatar-choice"} onClick={()=>setAvatar(a.id)} style={{background:a.gradient,boxShadow:avatar===a.id?"0 0 0 3px var(--panel),0 0 0 5px "+a.glow:undefined}}><AvatarImage avatar={a}/></button>)}</div><button className="primary-btn wide" onClick={save}>ذخیره تغییرات <Icon name="check"/></button></div></div>}
+/* ─────────────────────────── call room ─────────────────────────── */
 
 function CallPage({user,code,go,dark,setDark}:{user:User;code:string;go:(s:string)=>void;dark:boolean;setDark:(v:boolean)=>void}){
   const [call,setCall]=useState<CallInfo|null>(null); const [error,setError]=useState(""); const [joined,setJoined]=useState(false); const [shareNotice,setShareNotice]=useState(""); const [chatOpen,setChatOpen]=useState(false); const [emojiOpen,setEmojiOpen]=useState(false); const [qualityOpen,setQualityOpen]=useState(false); const [quality,setQuality]=useState(70); const [messages,setMessages]=useState<Array<{id:string;userId:string;username:string;avatar:string;text:string;createdAt:number}>>([]); const [draft,setDraft]=useState(""); const [participants,setParticipants]=useState<Participant[]>([]); const [reactions,setReactions]=useState<Array<{id:string;emoji:string;x:number}>>([]); const [connection,setConnection]=useState<"connecting"|"connected"|"reconnecting">("connecting");
@@ -210,7 +470,7 @@ function CallPage({user,code,go,dark,setDark}:{user:User;code:string;go:(s:strin
   const makePeer=useCallback(async(p:Participant)=>{if(pcs.current.has(p.id)||creatingPeers.current.has(p.id))return pcs.current.get(p.id)??null; creatingPeers.current.add(p.id); try{const ice=await getIceServers(); if(!participantsRef.current.some(x=>x.id===p.id))return null; const pc=new RTCPeerConnection({iceServers:ice}); pcs.current.set(p.id,pc); local.current?.getTracks().forEach(t=>pc.addTrack(t,local.current!)); pc.onicecandidate=e=>{if(e.candidate)send({type:"signal",to:p.id,payload:{kind:"ice",candidate:e.candidate.toJSON()}})}; pc.ontrack=e=>{const stream=e.streams[0]; if(!stream)return;streams.current.set(p.id,stream);let audio=audioEls.current.get(p.id);if(!audio){audio=new Audio();audio.autoplay=true;audioEls.current.set(p.id,audio)}audio.srcObject=stream; void audio.play().catch(()=>{}); setupAnalyser(stream,p.id,false)};pc.onconnectionstatechange=()=>{const s=pc.connectionState;if(s==="connected")setConnection("connected");else if(s==="failed"||s==="disconnected")setConnection("reconnecting")}; return pc;} catch {return null;} finally {creatingPeers.current.delete(p.id)}},[]);const maybeOffer=useCallback(async(p:Participant)=>{if(user.id>=p.id||offerStarted.current.has(p.id))return; const pc=pcs.current.get(p.id);if(!pc)return; offerStarted.current.add(p.id); try{await pc.setLocalDescription(await pc.createOffer());send({type:"signal",to:p.id,payload:{kind:"offer",sdp:pc.localDescription}})}catch{offerStarted.current.delete(p.id)}},[user.id]);
   const setupAnalyser=(stream:MediaStream,id:string,localStream=false)=>{try{const Ctx=window.AudioContext||((window as any).webkitAudioContext as typeof AudioContext);if(!Ctx)return;const ctx=new Ctx();const source=ctx.createMediaStreamSource(stream);const analyser=ctx.createAnalyser();analyser.fftSize=256;analyser.smoothingTimeConstant=.72;source.connect(analyser);const data=new Uint8Array(analyser.frequencyBinCount);let raf=0;const tick=()=>{analyser.getByteFrequencyData(data);let sum=0;for(const v of data)sum+=v;const avg=sum/data.length;if(localStream){setParticipants(ps=>ps.map(p=>p.id===user.id?{...p,speaking:avg>15&&!local.current?.getAudioTracks().some(t=>!t.enabled)}:p))}else setParticipants(ps=>ps.map(p=>p.id===id?{...p,speaking:avg>13&&!p.muted}:p));raf=requestAnimationFrame(tick)};tick();analyserCleanup.current.push(()=>{cancelAnimationFrame(raf);ctx.close().catch(()=>{})})}catch{}};
   useEffect(()=>{if(!joined)return;let active=true;const poll=async()=>{try{const d=await api.getCall(code);if(active)setCall(d.call)}catch(e){const msg=e instanceof Error?e.message:"";if(active && /دیگر فعال|فعال نیست|پیدا نشد/.test(msg))setError("این تماس به پایان رسیده یا دیگر در دسترس نیست.")}};poll();const pollId=setInterval(poll,3500);return()=>{active=false;clearInterval(pollId)};},[joined,code]);
-  useEffect(()=>{if(!joined)return;let dead=false; (async()=>{try{const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true,channelCount:1},video:false});if(dead){stream.getTracks().forEach(t=>t.stop());return;}local.current=stream;setParticipants(ps=>{if(ps.some(p=>p.id===user.id))return ps;const next=ps.concat({id:user.id,username:user.username,avatar:user.avatar,muted:false,speaking:false});participantsRef.current=next;return next;});setupAnalyser(stream,user.id,true); const scheme=location.protocol==="https:"?"wss":"ws"; const ws=new WebSocket(`${scheme}://${location.host}/ws/call/${encodeURIComponent(code)}`); wsRef.current=ws; ws.onopen=()=>{setConnection("connected");send({type:"hello"})}; ws.onclose=()=>setConnection("reconnecting"); ws.onerror=()=>setConnection("reconnecting"); ws.onmessage=async(ev)=>{try{const m=JSON.parse(ev.data);if(m.type==="ready"||m.type==="presence"){syncParticipants((m.participants||[]).map((p:any)=>({...p,speaking:false})));if(m.messages)setMessages(m.messages); setTimeout(()=>{for(const p of (m.participants||[]))if(p.id!==user.id)void makePeer(p).then(()=>maybeOffer(p))},30)}else if(m.type==="signal"){const from=m.from as string;let p=participantsRef.current.find(x=>x.id===from);if(!p)p={id:from,username:"Friend",avatar:AVATARS[0].id,muted:false};const peer=pcs.current.get(from)??await makePeer(p);if(!peer)return;const data=m.payload;if(data?.kind==="offer"){await peer.setRemoteDescription(data.sdp);for(const c of candidates.current.get(from)||[])await peer.addIceCandidate(c).catch(()=>{});candidates.current.delete(from);if(peer.signalingState==="have-remote-offer"){await peer.setLocalDescription(await peer.createAnswer());send({type:"signal",to:from,payload:{kind:"answer",sdp:peer.localDescription}})}}else if(data?.kind==="answer"){await peer.setRemoteDescription(data.sdp);for(const c of candidates.current.get(from)||[])await peer.addIceCandidate(c).catch(()=>{});candidates.current.delete(from)}else if(data?.kind==="ice"){if(!peer.remoteDescription){const arr=candidates.current.get(from)||[];arr.push(data.candidate);candidates.current.set(from,arr)}else{try{await peer.addIceCandidate(new RTCIceCandidate(data.candidate))}catch{}}} }else if(m.type==="ended"){setError("میزبان این کال را تمام کرد.");ws.close()}else if(m.type==="chat"){setMessages(ms=>ms.some(x=>x.id===m.message.id)?ms:ms.concat(m.message).slice(-100))}else if(m.type==="reaction"){const reactionId=crypto.randomUUID();setReactions(rs=>rs.concat({id:reactionId,emoji:m.emoji,x:35+Math.random()*30}).slice(-18));setTimeout(()=>setReactions(rs=>rs.filter(r=>r.id!==reactionId)),2200)}}catch{}};
+  useEffect(()=>{if(!joined)return;let dead=false; (async()=>{try{const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true,channelCount:1},video:false});if(dead){stream.getTracks().forEach(t=>t.stop());return;}local.current=stream;setParticipants(ps=>{if(ps.some(p=>p.id===user.id))return ps;const next=ps.concat({id:user.id,username:user.username,avatar:user.avatar,muted:false,speaking:false});participantsRef.current=next;return next;});setupAnalyser(stream,user.id,true); const scheme=location.protocol==="https:"?"wss":"ws"; const ws=new WebSocket(`${scheme}://${location.host}/ws/call/${encodeURIComponent(code)}`); wsRef.current=ws; ws.onopen=()=>{setConnection("connected");send({type:"hello"})}; ws.onclose=()=>setConnection("reconnecting"); ws.onerror=()=>setConnection("reconnecting"); ws.onmessage=async(ev)=>{try{const m=JSON.parse(ev.data);if(m.type==="ready"||m.type==="presence"){syncParticipants((m.participants||[]).map((p:any)=>({...p,speaking:false})));if(m.messages)setMessages(m.messages); setTimeout(()=>{for(const p of (m.participants||[]))if(p.id!==user.id)void makePeer(p).then(()=>maybeOffer(p))},30)}else if(m.type==="signal"){const from=m.from as string;let p=participantsRef.current.find(x=>x.id===from);if(!p)p={id:from,username:"Friend",avatar:DEFAULT_AVATAR,muted:false,speaking:false};const peer=pcs.current.get(from)??await makePeer(p);if(!peer)return;const data=m.payload;if(data?.kind==="offer"){await peer.setRemoteDescription(data.sdp);for(const c of candidates.current.get(from)||[])await peer.addIceCandidate(c).catch(()=>{});candidates.current.delete(from);if(peer.signalingState==="have-remote-offer"){await peer.setLocalDescription(await peer.createAnswer());send({type:"signal",to:from,payload:{kind:"answer",sdp:peer.localDescription}})}}else if(data?.kind==="answer"){await peer.setRemoteDescription(data.sdp);for(const c of candidates.current.get(from)||[])await peer.addIceCandidate(c).catch(()=>{});candidates.current.delete(from)}else if(data?.kind==="ice"){if(!peer.remoteDescription){const arr=candidates.current.get(from)||[];arr.push(data.candidate);candidates.current.set(from,arr)}else{try{await peer.addIceCandidate(new RTCIceCandidate(data.candidate))}catch{}}} }else if(m.type==="ended"){setError("میزبان این کال را تمام کرد.");ws.close()}else if(m.type==="chat"){setMessages(ms=>ms.some(x=>x.id===m.message.id)?ms:ms.concat(m.message).slice(-100))}else if(m.type==="reaction"){const reactionId=crypto.randomUUID();setReactions(rs=>rs.concat({id:reactionId,emoji:m.emoji,x:35+Math.random()*30}).slice(-18));setTimeout(()=>setReactions(rs=>rs.filter(r=>r.id!==reactionId)),2200)}}catch{}};
         }catch{setError("دسترسی به میکروفون ممکن نشد. اجازهٔ Microphone را در مرورگر فعال کن.")}})(); return()=>{dead=true; wsRef.current?.close();local.current?.getTracks().forEach(t=>t.stop());for(const id of Array.from(pcs.current.keys()))closePeer(id);analyserCleanup.current.splice(0).forEach(fn=>fn());};},[joined,code,user.id,user.username,user.avatar]);
   useEffect(()=>{participants.filter(p=>p.id!==user.id).forEach(p=>{void makePeer(p).then(()=>maybeOffer(p))})},[participants,makePeer,maybeOffer]);
   const toggleMute=()=>{const track=local.current?.getAudioTracks()[0];if(!track)return;track.enabled=!track.enabled;const muted=!track.enabled;setParticipants(ps=>{const next=ps.map(p=>p.id===user.id?{...p,muted,speaking:false}:p);participantsRef.current=next;return next;});send({type:"mute",muted})};
@@ -219,18 +479,30 @@ function CallPage({user,code,go,dark,setDark}:{user:User;code:string;go:(s:strin
   const sendChat=()=>{if(!draft.trim())return;send({type:"chat",text:draft});setDraft("")};
   const react=(emoji:string)=>{send({type:"reaction",emoji});};
   const my=participants.find(p=>p.id===user.id); const maxParticipants=call?.maxParticipants??MAX_CALL_PARTICIPANTS; const qualityLabel=quality<34?"مصرف کم • مناسب اینترنت ضعیف":quality<72?"بالانس • کیفیت خوب":"کیفیت بالا • مصرف بیشتر";
-  if(error)return <main className="app-bg call-error"><div className="error-card glass"><div className="brand-mark">◈</div><h2>ورود به کال ممکن نشد</h2><p>{error}</p><button className="primary-btn" onClick={()=>go("/calls")}>بازگشت به کال‌ها</button></div></main>;
-  return <main className="app-bg call-page"><div className="aurora a1"/><div className="aurora a2"/><header className="call-header"><div className="call-header-left"><div className="call-brand"><div className="brand-mark"><span>◈</span></div><div><b>{call?.name??"Friend Call"}</b><span dir="ltr">#{code}</span></div></div><button className="call-code-chip" onClick={shareCall} title="کپی یا اشتراک‌گذاری لینک کال"><span>کد ورود</span><strong dir="ltr">{code}</strong><Icon name={shareNotice?"check":"copy"} size={15}/></button>{shareNotice&&<span className="share-feedback">{shareNotice}</span>}</div><div className="call-center-status"><span className={connection==="connected"?"live-dot":"live-dot warn"}/>{connection==="connected"?"متصل":"در حال اتصال دوباره…"}<small>•</small><span>{participants.length} / {maxParticipants} نفر</span></div><div className="call-head-actions"><button className="icon-btn" onClick={()=>setDark(!dark)} aria-label="تغییر تم"><Icon name={dark?"sun":"moon"}/></button><button className="leave-top" onClick={leave}><Icon name="phoneOff" size={16}/> خروج</button></div></header>
+  if(error)return <main className="app-bg call-error"><Scene/><div className="error-card glass"><AppAvatar size={54}/><h2>ورود به کال ممکن نشد</h2><p>{error}</p><GlowButton tone="primary" icon="arrow" onClick={()=>go("/calls")}>بازگشت به کال‌ها</GlowButton></div></main>;
+  return <main className="app-bg call-page"><Scene variant="call"/><header className="call-header"><div className="call-header-left"><div className="call-brand"><AppAvatar size={38} className="brand-avatar"/><div><b>{call?.name??"Friend Call"}</b><span dir="ltr">#{code}</span></div></div><button className="call-code-chip" onClick={shareCall} onMouseMove={spotlight} title="کپی یا اشتراک‌گذاری لینک کال"><span>کد ورود</span><strong dir="ltr">{code}</strong><Icon name={shareNotice?"check":"copy"} size={15}/></button>{shareNotice&&<span className="share-feedback">{shareNotice}</span>}</div><div className="call-center-status"><span className={connection==="connected"?"live-dot":"live-dot warn"}/>{connection==="connected"?"متصل":"در حال اتصال دوباره…"}<small>•</small><span>{participants.length} / {maxParticipants} نفر</span></div><div className="call-head-actions"><button className="icon-btn" onClick={()=>setDark(!dark)} aria-label="تغییر تم"><Icon name={dark?"sun":"moon"}/></button><button className="leave-top" onClick={leave}><Icon name="phoneOff" size={16}/> خروج</button></div></header>
     <section className="call-stage"><div className={`participant-stage count-${Math.min(participants.length,MAX_CALL_PARTICIPANTS)}`}>{participants.map(p=><ParticipantTile key={p.id} participant={p} self={p.id===user.id} hostId={call?.hostId}/>)}</div>{reactions.map(r=><span key={r.id} className="reaction-float" style={{left:`${r.x}%`}}>{r.emoji}</span>)}{!participants.length&&<div className="joining"><span className="spinner"/><p>در حال ورود به کال…</p></div>}{participants.length<maxParticipants&&participants.length>0&&<div className="waiting-pill glass"><span className="waiting-dot"/> ظرفیت تماس {maxParticipants-participants.length} نفر دیگر دارد — کد بالا را برای دوستانت بفرست.</div>}{participants.length>=maxParticipants&&<div className="waiting-pill glass"><span className="waiting-dot"/> این تماس به حداکثر ظرفیت {maxParticipants} نفر رسیده است.</div>}</section>
     <div className="call-toolbar-wrap"><div className="call-toolbar glass">
       {qualityOpen&&<div className="popover quality-pop"><div className="popover-head"><div><b>🎚 کنترل کیفیت صدا</b><span>{qualityLabel}</span></div><span className="quality-number">{quality}</span></div><input type="range" min="0" max="100" value={quality} onChange={e=>changeQuality(Number(e.target.value))}/><div className="range-labels"><span>ضعیف</span><span>تعادل</span><span>شفاف</span></div></div>}
       {emojiOpen&&<div className="popover emoji-pop">{QUICK_EMOJIS.map(e=><button key={e} onClick={()=>{react(e);setEmojiOpen(false)}}>{e}</button>)}</div>}
-      <ToolButton label={my?.muted?"باز کردن میکروفون":"میوت کردن"} danger={!!my?.muted} active={!my?.muted} onClick={toggleMute} icon={my?.muted?"micOff":"mic"}/><ToolButton label="ایموجی" active={emojiOpen} onClick={()=>{setEmojiOpen(!emojiOpen);setQualityOpen(false)}} icon="smile"/><ToolButton label="چت" active={chatOpen} onClick={()=>{setChatOpen(!chatOpen);setEmojiOpen(false)}} icon="message"/><ToolButton label="کیفیت صدا" active={qualityOpen} onClick={()=>{setQualityOpen(!qualityOpen);setEmojiOpen(false)}} icon="signal"/><div className="toolbar-divider"/><button className="leave-btn" onClick={leave}><Icon name="phoneOff"/></button>
+      <ToolButton label={my?.muted?"باز کردن میکروفون":"میوت کردن"} danger={!!my?.muted} active={!my?.muted} onClick={toggleMute} icon={my?.muted?"micOff":"mic"}/><ToolButton label="ایموجی" active={emojiOpen} onClick={()=>{setEmojiOpen(!emojiOpen);setQualityOpen(false)}} icon="smile"/><ToolButton label="چت" active={chatOpen} onClick={()=>{setChatOpen(!chatOpen);setEmojiOpen(false)}} icon="message"/><ToolButton label="کیفیت صدا" active={qualityOpen} onClick={()=>{setQualityOpen(!qualityOpen);setEmojiOpen(false)}} icon="signal"/><div className="toolbar-divider"/><button className="leave-btn" onClick={leave} title="خروج از تماس"><Icon name="phoneOff"/></button>
     </div></div>
-    {chatOpen&&<aside className="chat-drawer glass"><div className="chat-head"><div><b>گفت‌وگو</b><span>پیام‌های همین کال</span></div><button className="icon-btn" onClick={()=>setChatOpen(false)}><Icon name="x"/></button></div><div className="chat-list">{messages.map(m=><div key={m.id} className={m.userId===user.id?"chat-msg mine":"chat-msg"}><div className="chat-avatar" style={{background:avatarOf(m.avatar).gradient}}><AvatarImage avatar={avatarOf(m.avatar)}/></div><div><span>{m.userId===user.id?"شما":m.username}</span><p>{m.text}</p></div></div>)}{!messages.length&&<div className="chat-empty"><Icon name="message" size={28}/><p>هنوز پیامی نیست.</p></div>}</div><div className="chat-compose"><input value={draft} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")sendChat()}} placeholder="پیامت را بنویس…"/><button onClick={sendChat}><Icon name="arrow" size={16}/></button></div></aside>}
-  </main>
+    {chatOpen&&<aside className="chat-drawer glass"><div className="chat-head"><div><b>گفت‌وگو</b><span>پیام‌های همین کال</span></div><button className="icon-btn" onClick={()=>setChatOpen(false)}><Icon name="x"/></button></div><div className="chat-list">{messages.map(m=><div key={m.id} className={m.userId===user.id?"chat-msg mine":"chat-msg"}><div className="chat-avatar" style={{background:avatarOf(m.avatar).gradient}}><AvatarImage avatar={m.avatar}/></div><div><span>{m.userId===user.id?"شما":m.username}</span><p>{m.text}</p></div></div>)}{!messages.length&&<div className="chat-empty"><Icon name="message" size={28}/><p>هنوز پیامی نیست.</p></div>}</div><div className="chat-compose"><input value={draft} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")sendChat()}} placeholder="پیامت را بنویس…"/><button onClick={sendChat} aria-label="ارسال"><Icon name="arrow" size={16}/></button></div></aside>}
+  </main>;
 }
-function ParticipantTile({participant,self,hostId}:{participant:Participant;self:boolean;hostId?:string}){const a=avatarOf(participant.avatar);const state=participant.muted?"muted":participant.speaking?"speaking":"idle";return <div className={self?"participant-card self":"participant-card"}><div className={`avatar-stage ${state}`}><div className="avatar-face" style={{background:a.gradient,boxShadow:`inset 0 2px 12px rgba(255,255,255,.24),0 18px 50px ${a.glow}`}}><AvatarImage avatar={a}/></div>{participant.muted&&<span className="mute-badge"><Icon name="micOff" size={13}/></span>}{participant.speaking&&!participant.muted&&<span className="speaking-dot"/>}</div><div className="participant-name"><b>{participant.username}</b>{self&&<span>شما</span>}{participant.id===hostId&&<span className="host-badge">میزبان</span>}{participant.muted&&<em>میوت</em>}</div></div>}
-function ToolButton({label,icon,onClick,active,danger}:{label:string;icon:string;onClick:()=>void;active?:boolean;danger?:boolean}){return <button onClick={onClick} className={danger?"tool danger":"tool"}><span className={active?"tool-circle active":"tool-circle"}><Icon name={icon}/></span><small>{label}</small></button>}
+
+function ParticipantTile({participant,self,hostId}:{participant:Participant;self:boolean;hostId?:string}){
+  const a=avatarOf(participant.avatar);const state=participant.muted?"muted":participant.speaking?"speaking":"idle";
+  return <div className={self?"participant-card self":"participant-card"}>
+    <div className={`avatar-stage ${state}`} style={{"--accent":a.accent} as CSSProperties}>
+      <div className="avatar-face" style={{background:a.gradient}}><AvatarImage avatar={a}/></div>
+      {participant.muted&&<span className="mute-badge"><Icon name="micOff" size={13}/></span>}
+      {participant.speaking&&!participant.muted&&<span className="speaking-dot"/>}
+    </div>
+    <div className="participant-name"><b>{participant.username}</b>{self&&<span>شما</span>}{participant.id===hostId&&<span className="host-badge">میزبان</span>}{participant.muted&&<em>میوت</em>}</div>
+  </div>;
+}
+
+function ToolButton({label,icon,onClick,active,danger}:{label:string;icon:string;onClick:()=>void;active?:boolean;danger?:boolean}){return <button onClick={onClick} className={danger?"tool danger":"tool"} onMouseMove={spotlight}><span className={active?"tool-circle active":"tool-circle"}><Icon name={icon}/></span><small>{label}</small></button>}
 
 export default App;

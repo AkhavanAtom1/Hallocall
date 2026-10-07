@@ -6,8 +6,12 @@
 
 - ثبت‌نام و ورود با Username + Password
 - هش امن رمز عبور با PBKDF2/SHA-256 در Worker Runtime
-- انتخاب آواتارهای فوتبالی هنگام ثبت‌نام و امکان تغییر آواتار از Profile
-- ۱۵ آواتار تصویری فوتبالی با sprite سبک‌وزن، glow و rim-light
+- انتخاب آواتار هنگام ثبت‌نام و یک صفحه کامل «پروفایل‌ها» برای تغییر آن
+- ۳۰ آواتار تصویری در ۴ کالکشن: ۱۵ افسانه فوتبال، ۵ شخصیت Elden Ring، ۵ شوالیه Dark Souls و ۵ آیکون بازی
+- همه آواتارها در یک sprite تک‌فایل ۶×۵ (webp) با حلقه نئونی، rim-light و هاله رنگی هر پروفایل
+- فیلتر کالکشن (chip) روی گالری آواتار، پیش‌نمایش زنده و ذخیره آنی روی پروفایل
+- سیستم دکمه‌ای GlowButton: سایه لایه‌ای، spotlight دنبال‌کننده ماوس، shine sweep و هاله کف دکمه
+- پس‌زمینه چندلایه: aurora متحرک، پرتوهای نوری استادیوم، گرید، جرقه، film grain و vignette
 - جست‌وجوی کاربران با Username
 - Friend Request / Accept / Decline / Remove
 - Presence آنلاین/آفلاین
@@ -53,14 +57,20 @@ hallocall/
 │  ├─ App.tsx                 # UI اصلی + صفحات + Call UI
 │  ├─ main.tsx
 │  ├─ styles.css              # تم پایه
-│  ├─ premium.css             # لایه نورپردازی و انیمیشن حرفه‌ای
-│  ├─ assets/football-legends-avatars.b64  # منبع sprite آواتارها
+│  ├─ premium.css             # لایه نورپردازی، موشن و کامپوننت‌های بصری
+│  ├─ assets/legends-avatars.b64  # sprite آواتارها (base64، خروجی compose-avatars)
 │  ├─ components/Icon.tsx
+│  ├─ components/Scene.tsx    # پس‌زمینه چندلایه + helper نور spotlight
+│  ├─ components/GlowButton.tsx
+│  ├─ components/AvatarPicker.tsx
+│  ├─ components/AvatarImage.tsx
 │  ├─ lib/api.ts              # کلاینت API
-│  ├─ lib/avatars.ts
+│  ├─ lib/avatars.ts          # رجیستری آواتارها از روی کاتالوگ JSON
+│  ├─ lib/avatars.catalog.json # تعریف ۳۰ پروفایل (رنگ، لیبل، کالکشن، فایل رندر)
 │  ├─ lib/types.ts
 │  ├─ lib/webrtc.ts            # TURN/STUN + bitrate control
 │  └─ worker/index.ts          # Worker API + Durable Object
+├─ scripts/compose-avatars.mjs  # ساخت sprite از avatar-src/*.png (dev، ImageMagick)
 ├─ migrations/0001_init.sql   # D1 schema
 ├─ wrangler.jsonc
 ├─ vite.config.ts

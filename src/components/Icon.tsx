@@ -24,6 +24,7 @@ export function Icon({ name, size = 20, stroke = 1.9 }: { name: string; size?: n
     signal: <><path d="M5 18a12 12 0 0 1 0-12M9 15a7 7 0 0 1 0-6M13 12h.01"/></>,
     spark: <><path d="m12 3-1.2 5.8L5 10l5.8 1.2L12 17l1.2-5.8L19 10l-5.8-1.2Z"/><path d="m19 17-.6 2.4L16 20l2.4.6L19 23l.6-2.4L22 20l-2.4-.6Z"/></>,
     info: <><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></>,
+    mask: <><path d="M3.6 5.6c5.6-1.3 11.2-1.3 16.8 0 .4 6.5-2.2 11.7-8.4 13.7-6.2-2-8.8-7.2-8.4-13.7Z"/><path d="M8.1 9.5c.9-.7 2-.7 2.9 0M13 9.5c.9-.7 2-.7 2.9 0M9 14.4c1.9 1.3 4.1 1.3 6 0"/></>,
   };
   return <svg {...common}>{paths[name] ?? paths.spark}</svg>;
 }

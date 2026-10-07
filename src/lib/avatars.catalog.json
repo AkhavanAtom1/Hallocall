@@ -1,0 +1,461 @@
+{
+  "sprite": {
+    "cols": 6,
+    "rows": 5,
+    "tile": 320,
+    "file": "/avatars/legends.webp"
+  },
+  "categories": [
+    {
+      "id": "football",
+      "icon": "⚽",
+      "fa": "افسانه‌های فوتبال",
+      "en": "FOOTBALL LEGENDS",
+      "hint": "۱۵ پروفایل از پشتِ پیراهن، با شماره و نام روی پیراهن"
+    },
+    {
+      "id": "elden",
+      "icon": "🌿",
+      "fa": "Elden Ring",
+      "en": "LANDS BETWEEN",
+      "hint": "پنج شخصیت تاریک و حماسی از سرزمین‌های میانی"
+    },
+    {
+      "id": "souls",
+      "icon": "⚔️",
+      "fa": "Dark Souls",
+      "en": "ASHES OF ASTORA",
+      "hint": "شوالیه‌ها و هیولاها با نورپردازی دراماتیک"
+    },
+    {
+      "id": "bonus",
+      "icon": "🔥",
+      "fa": "افسانه‌های بازی",
+      "en": "GAME ICONS",
+      "hint": "پنجاه‌تای special از بهترین بازی‌های نسل"
+    }
+  ],
+  "avatars": [
+    {
+      "id": "ronaldo_red",
+      "no": 1,
+      "file": "01-ronaldo-red.png",
+      "cat": "football",
+      "name": "رونالدو",
+      "tag": "قرمز • شماره ۷",
+      "jersey": "RONALDO",
+      "mono": "7",
+      "accent": "#ef4444",
+      "accent2": "#7f1d1d"
+    },
+    {
+      "id": "ronaldo_white",
+      "no": 2,
+      "file": "02-ronaldo-white.png",
+      "cat": "football",
+      "name": "رونالدو",
+      "tag": "سفید • شماره ۷",
+      "jersey": "RONALDO",
+      "mono": "7",
+      "accent": "#e2e8f0",
+      "accent2": "#64748b"
+    },
+    {
+      "id": "ronaldo_black",
+      "no": 3,
+      "file": "03-ronaldo-juve.png",
+      "cat": "football",
+      "name": "رونالدو",
+      "tag": "یوونتوس • شماره ۷",
+      "jersey": "RONALDO",
+      "mono": "7",
+      "accent": "#cbd5e1",
+      "accent2": "#111827",
+      "kit": [
+        "#0b0d12",
+        "#e8ecf2"
+      ]
+    },
+    {
+      "id": "messi_barca_blue",
+      "no": 4,
+      "file": "04-messi-barca-blue.png",
+      "cat": "football",
+      "name": "مسی",
+      "tag": "بارسلونا • آبی",
+      "jersey": "MESSI",
+      "mono": "10",
+      "accent": "#3b82f6",
+      "accent2": "#1e3a8a",
+      "kit": [
+        "#123c8b",
+        "#a50044"
+      ],
+      "print": {
+        "name": "MESSI",
+        "number": "10",
+        "nameY": 0.555,
+        "numberY": 0.76,
+        "nameSize": 0.056,
+        "numberSize": 0.25,
+        "color": "#ffd400",
+        "shadow": "rgba(8,10,34,.55)",
+        "opacity": 1.0
+      }
+    },
+    {
+      "id": "messi_barca_purple",
+      "no": 5,
+      "file": "05-messi-barca-purple.png",
+      "cat": "football",
+      "name": "مسی",
+      "tag": "بارسلونا • بنفش",
+      "jersey": "MESSI",
+      "mono": "10",
+      "accent": "#a855f7",
+      "accent2": "#4c1d95",
+      "kit": [
+        "#1b2f6e",
+        "#8b1e3f"
+      ],
+      "print": {
+        "name": "MESSI",
+        "number": "10",
+        "nameY": 0.575,
+        "numberY": 0.78,
+        "nameSize": 0.056,
+        "numberSize": 0.25,
+        "color": "#ffd400",
+        "shadow": "rgba(8,8,26,.6)",
+        "opacity": 1.0
+      }
+    },
+    {
+      "id": "ronaldinho_brazil",
+      "no": 6,
+      "file": "06-ronaldinho-brazil.png",
+      "cat": "football",
+      "name": "رونالدینیو",
+      "tag": "برزیل • شماره ۱۰",
+      "jersey": "RONALDINHO",
+      "mono": "10",
+      "accent": "#facc15",
+      "accent2": "#16a34a"
+    },
+    {
+      "id": "ronaldinho_milan",
+      "no": 7,
+      "file": "07-ronaldinho-milan.png",
+      "cat": "football",
+      "name": "رونالدینیو",
+      "tag": "میلان • شماره ۸۰",
+      "jersey": "RONALDINHO",
+      "mono": "80",
+      "accent": "#dc2626",
+      "accent2": "#111827",
+      "kit": [
+        "#dc2626",
+        "#111827"
+      ]
+    },
+    {
+      "id": "neymar_brazil",
+      "no": 8,
+      "file": "08-neymar-brazil.png",
+      "cat": "football",
+      "name": "نیمار",
+      "tag": "برزیل • شماره ۱۰",
+      "jersey": "NEYMAR JR",
+      "mono": "10",
+      "accent": "#fbbf24",
+      "accent2": "#15803d"
+    },
+    {
+      "id": "neymar_barca",
+      "no": 9,
+      "file": "09-neymar-barca.png",
+      "cat": "football",
+      "name": "نیمار",
+      "tag": "بارسلونا • شماره ۱۱",
+      "jersey": "NEYMAR JR",
+      "mono": "11",
+      "accent": "#8b5cf6",
+      "accent2": "#1d4ed8",
+      "kit": [
+        "#1d3f9c",
+        "#7f1d3d"
+      ]
+    },
+    {
+      "id": "dybala_juve",
+      "no": 10,
+      "file": "10-dybala-juve.png",
+      "cat": "football",
+      "name": "دیبالا",
+      "tag": "یوونتوس • شماره ۱۰",
+      "jersey": "DYBALA",
+      "mono": "10",
+      "accent": "#94a3b8",
+      "accent2": "#0f172a",
+      "kit": [
+        "#0b0d12",
+        "#e8ecf2"
+      ]
+    },
+    {
+      "id": "ronaldo_red_alt",
+      "no": 11,
+      "file": "11-ronaldo-red-alt.png",
+      "cat": "football",
+      "name": "رونالدو",
+      "tag": "قرمز درخشان • شماره ۷",
+      "jersey": "RONALDO",
+      "mono": "7",
+      "accent": "#f87171",
+      "accent2": "#7f1d1d"
+    },
+    {
+      "id": "messi_argentina",
+      "no": 12,
+      "file": "12-messi-argentina.png",
+      "cat": "football",
+      "name": "مسی",
+      "tag": "آرژانتین • شماره ۱۰",
+      "jersey": "MESSI",
+      "mono": "10",
+      "accent": "#38bdf8",
+      "accent2": "#0c4a6e",
+      "kit": [
+        "#6fa8dc",
+        "#f2f8fd"
+      ],
+      "print": {
+        "name": "MESSI",
+        "number": "10",
+        "nameY": 0.565,
+        "numberY": 0.77,
+        "nameSize": 0.055,
+        "numberSize": 0.245,
+        "color": "#0b2a5b",
+        "shadow": "rgba(255,255,255,.35)",
+        "opacity": 1.0
+      }
+    },
+    {
+      "id": "mbappe_france",
+      "no": 13,
+      "file": "13-mbappe-france.png",
+      "cat": "football",
+      "name": "امباپه",
+      "tag": "فرانسه • شماره ۱۰",
+      "jersey": "MBAPPE",
+      "mono": "10",
+      "accent": "#60a5fa",
+      "accent2": "#172554"
+    },
+    {
+      "id": "van_dijk_netherlands",
+      "no": 14,
+      "file": "14-van-dijk-netherlands.png",
+      "cat": "football",
+      "name": "فن‌دایک",
+      "tag": "هلند • شماره ۴",
+      "jersey": "VAN DIJK",
+      "mono": "4",
+      "accent": "#f97316",
+      "accent2": "#7c2d12"
+    },
+    {
+      "id": "haaland_city",
+      "no": 15,
+      "file": "15-haaland-city.png",
+      "cat": "football",
+      "name": "هالند",
+      "tag": "سیتی • شماره ۹",
+      "jersey": "HAALAND",
+      "mono": "9",
+      "accent": "#22d3ee",
+      "accent2": "#075985"
+    },
+    {
+      "id": "tarnished",
+      "no": 16,
+      "file": "16-tarnished.png",
+      "cat": "elden",
+      "name": "Tarnished",
+      "tag": "جنگجوی اصلی",
+      "jersey": "TARNISHED",
+      "mono": "TR",
+      "accent": "#d9b26d",
+      "accent2": "#3f3216"
+    },
+    {
+      "id": "malenia",
+      "no": 17,
+      "file": "17-malenia.png",
+      "cat": "elden",
+      "name": "Malenia",
+      "tag": "ملکه سرخ",
+      "jersey": "MALENIA",
+      "mono": "MA",
+      "accent": "#e11d48",
+      "accent2": "#4c0519"
+    },
+    {
+      "id": "radahn",
+      "no": 18,
+      "file": "18-radahn.png",
+      "cat": "elden",
+      "name": "Radahn",
+      "tag": "Starscourge",
+      "jersey": "RADAHN",
+      "mono": "RA",
+      "accent": "#b91c1c",
+      "accent2": "#450a0a"
+    },
+    {
+      "id": "ranni",
+      "no": 19,
+      "file": "19-ranni.png",
+      "cat": "elden",
+      "name": "Ranni",
+      "tag": "جادوگر ماه",
+      "jersey": "RANNI",
+      "mono": "RN",
+      "accent": "#93c5fd",
+      "accent2": "#1e3a8a"
+    },
+    {
+      "id": "melina",
+      "no": 20,
+      "file": "20-melina.png",
+      "cat": "elden",
+      "name": "Melina",
+      "tag": "wanderer",
+      "jersey": "MELINA",
+      "mono": "ME",
+      "accent": "#fbbf24",
+      "accent2": "#78350f"
+    },
+    {
+      "id": "artorias",
+      "no": 21,
+      "file": "21-artorias.png",
+      "cat": "souls",
+      "name": "Artorias",
+      "tag": "شوالیه پرتگاه",
+      "jersey": "ARTORIAS",
+      "mono": "AR",
+      "accent": "#3b5bdb",
+      "accent2": "#0b1b4b"
+    },
+    {
+      "id": "solaire",
+      "no": 22,
+      "file": "22-solaire.png",
+      "cat": "souls",
+      "name": "Solaire",
+      "tag": "شمس Astora",
+      "jersey": "SOLAIRE",
+      "mono": "SO",
+      "accent": "#f59e0b",
+      "accent2": "#7c2d12"
+    },
+    {
+      "id": "ornstein",
+      "no": 23,
+      "file": "23-ornstein.png",
+      "cat": "souls",
+      "name": "Ornstein",
+      "tag": "شکارچی اژدها",
+      "jersey": "ORNSTEIN",
+      "mono": "OR",
+      "accent": "#eab308",
+      "accent2": "#3f2d05"
+    },
+    {
+      "id": "black_knight",
+      "no": 24,
+      "file": "24-black-knight.png",
+      "cat": "souls",
+      "name": "Black Knight",
+      "tag": "شوالیه سیاه",
+      "jersey": "BLACK KNIGHT",
+      "mono": "BK",
+      "accent": "#64748b",
+      "accent2": "#0b0f19"
+    },
+    {
+      "id": "nameless_king",
+      "no": 25,
+      "file": "25-nameless-king.png",
+      "cat": "souls",
+      "name": "Nameless King",
+      "tag": "پادشاه طوفان",
+      "jersey": "NAMELESS KING",
+      "mono": "NK",
+      "accent": "#7dd3fc",
+      "accent2": "#0c4a6e"
+    },
+    {
+      "id": "sekiro",
+      "no": 26,
+      "file": "26-sekiro.png",
+      "cat": "bonus",
+      "name": "Sekiro",
+      "tag": "شینوبی تنها",
+      "jersey": "SEKIRO",
+      "mono": "SE",
+      "accent": "#dc2626",
+      "accent2": "#111827"
+    },
+    {
+      "id": "ghost_samurai",
+      "no": 27,
+      "file": "27-ghost-of-tsushima.png",
+      "cat": "bonus",
+      "name": "Ghost of Tsushima",
+      "tag": "سامورایی",
+      "jersey": "TSUSHIMA",
+      "mono": "GT",
+      "accent": "#ef4444",
+      "accent2": "#450a0a"
+    },
+    {
+      "id": "kratos",
+      "no": 28,
+      "file": "28-kratos.png",
+      "cat": "bonus",
+      "name": "Kratos",
+      "tag": "خدای جنگ",
+      "jersey": "KRATOS",
+      "mono": "KR",
+      "accent": "#67e8f9",
+      "accent2": "#0f172a"
+    },
+    {
+      "id": "geralt",
+      "no": 29,
+      "file": "29-geralt.png",
+      "cat": "bonus",
+      "name": "Geralt",
+      "tag": "The Witcher",
+      "jersey": "GERALT",
+      "mono": "GE",
+      "accent": "#cbd5e1",
+      "accent2": "#111827"
+    },
+    {
+      "id": "doom_slayer",
+      "no": 30,
+      "file": "30-doom-slayer.png",
+      "cat": "bonus",
+      "name": "Doom Slayer",
+      "tag": "شیطان‌کش",
+      "jersey": "DOOM SLAYER",
+      "mono": "DS",
+      "accent": "#f43f5e",
+      "accent2": "#14532d"
+    }
+  ]
+}
