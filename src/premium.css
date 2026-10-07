@@ -620,3 +620,57 @@ input:focus-visible {
     min-width: 0;
   }
 }
+
+/* Eight-person call layout */
+.participant-stage { width: min(1180px, 100%); }
+.participant-stage.count-5,
+.participant-stage.count-6,
+.participant-stage.count-7,
+.participant-stage.count-8 { gap: 26px 42px; }
+.participant-stage.count-5 .avatar-stage,
+.participant-stage.count-6 .avatar-stage,
+.participant-stage.count-7 .avatar-stage,
+.participant-stage.count-8 .avatar-stage { width: 132px; height: 132px; }
+.participant-stage.count-5 .participant-card,
+.participant-stage.count-6 .participant-card,
+.participant-stage.count-7 .participant-card,
+.participant-stage.count-8 .participant-card { min-width: 132px; }
+
+@media (max-width: 900px) {
+  .participant-stage.count-4,
+  .participant-stage.count-5,
+  .participant-stage.count-6,
+  .participant-stage.count-7,
+  .participant-stage.count-8 { gap: 22px 24px; }
+  .participant-stage.count-4 .avatar-stage,
+  .participant-stage.count-5 .avatar-stage,
+  .participant-stage.count-6 .avatar-stage,
+  .participant-stage.count-7 .avatar-stage,
+  .participant-stage.count-8 .avatar-stage { width: 112px; height: 112px; }
+  .participant-stage.count-4 .participant-card,
+  .participant-stage.count-5 .participant-card,
+  .participant-stage.count-6 .participant-card,
+  .participant-stage.count-7 .participant-card,
+  .participant-stage.count-8 .participant-card { min-width: 112px; }
+}
+
+@media (max-width: 560px) {
+  .participant-stage.count-3 .avatar-stage,
+  .participant-stage.count-4 .avatar-stage,
+  .participant-stage.count-5 .avatar-stage,
+  .participant-stage.count-6 .avatar-stage,
+  .participant-stage.count-7 .avatar-stage,
+  .participant-stage.count-8 .avatar-stage { width: 88px; height: 88px; }
+  .participant-stage.count-3 .participant-card,
+  .participant-stage.count-4 .participant-card,
+  .participant-stage.count-5 .participant-card,
+  .participant-stage.count-6 .participant-card,
+  .participant-stage.count-7 .participant-card,
+  .participant-stage.count-8 .participant-card { min-width: 88px; }
+  .participant-stage.count-3,
+  .participant-stage.count-4,
+  .participant-stage.count-5,
+  .participant-stage.count-6,
+  .participant-stage.count-7,
+  .participant-stage.count-8 { gap: 18px 14px; }
+}
