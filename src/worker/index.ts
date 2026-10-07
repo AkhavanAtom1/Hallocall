@@ -293,8 +293,8 @@ function callDO(env: Env, code:string, req:Request, user:SafeUser) {
 }
 
 async function ensureAuthDatabase(env: Env) {
-  await env.HALLOCALL_DB.exec(`
-    CREATE TABLE IF NOT EXISTS users (
+  await env.HALLOCALL_DB.batch([
+    env.HALLOCALL_DB.prepare(`CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       username TEXT NOT NULL,
       username_lower TEXT NOT NULL UNIQUE,
@@ -302,18 +302,50 @@ async function ensureAuthDatabase(env: Env) {
       avatar TEXT NOT NULL DEFAULT 'ronaldo_red',
       created_at INTEGER NOT NULL,
       last_seen_at INTEGER NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS users_username_lower_idx ON users(username_lower);
-    CREATE INDEX IF NOT EXISTS users_last_seen_idx ON users(last_seen_at);
-    CREATE TABLE IF NOT EXISTS sessions (
+    )`),
+    env.HALLOCALL_DB.prepare(`CREATE INDEX IF NOT EXISTS users_username_lower_idx ON users(username_lower)`),
+    env.HALLOCALL_DB.prepare(`CREATE INDEX IF NOT EXISTS users_last_seen_idx ON users(last_seen_at)`),
+    env.HALLOCALL_DB.prepare(`CREATE TABLE IF NOT EXISTS sessions (
       token_hash TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       created_at INTEGER NOT NULL,
       expires_at INTEGER NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS sessions_user_idx ON sessions(user_id);
-    CREATE INDEX IF NOT EXISTS sessions_expiry_idx ON sessions(expires_at);
-  `);
+    )`),
+    env.HALLOCALL_DB.prepare(`CREATE INDEX IF NOT EXISTS sessions_user_idx ON sessions(user_id)`),
+    env.HALLOCALL_DB.prepare(`CREATE INDEX IF NOT EXISTS sessions_expiry_idx ON sessions(expires_at)`),
+    env.HALLOCALL_DB.prepare(`CREATE TABLE IF NOT EXISTS friendships (
+      id TEXT PRIMARY KEY,
+      requester_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      addressee_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      status TEXT NOT NULL CHECK(status IN ('pending','accepted','declined')) DEFAULT 'pending',
+      created_at INTEGER NOT NULL,
+      responded_at INTEGER,
+      UNIQUE(requester_id, addressee_id)
+    )`),
+    env.HALLOCALL_DB.prepare(`CREATE INDEX IF NOT EXISTS friendships_requester_idx ON friendships(requester_id, status)`),
+    env.HALLOCALL_DB.prepare(`CREATE INDEX IF NOT EXISTS friendships_addressee_idx ON friendships(addressee_id, status)`),
+    env.HALLOCALL_DB.prepare(`CREATE TABLE IF NOT EXISTS calls (
+      id TEXT PRIMARY KEY,
+      code TEXT NOT NULL UNIQUE,
+      host_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name TEXT NOT NULL DEFAULT 'Friend Call',
+      status TEXT NOT NULL CHECK(status IN ('waiting','active','ended')) DEFAULT 'waiting',
+      created_at INTEGER NOT NULL,
+      ended_at INTEGER
+    )`),
+    env.HALLOCALL_DB.prepare(`CREATE INDEX IF NOT EXISTS calls_host_idx ON calls(host_id, status)`),
+    env.HALLOCALL_DB.prepare(`CREATE TABLE IF NOT EXISTS call_invites (
+      id TEXT PRIMARY KEY,
+      call_id TEXT NOT NULL REFERENCES calls(id) ON DELETE CASCADE,
+      caller_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      callee_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      status TEXT NOT NULL CHECK(status IN ('ringing','accepted','declined','cancelled','expired')) DEFAULT 'ringing',
+      created_at INTEGER NOT NULL,
+      responded_at INTEGER
+    )`),
+    env.HALLOCALL_DB.prepare(`CREATE INDEX IF NOT EXISTS call_invites_callee_idx ON call_invites(callee_id, status, created_at)`),
+    env.HALLOCALL_DB.prepare(`CREATE INDEX IF NOT EXISTS call_invites_caller_idx ON call_invites(caller_id, status, created_at)`),
+  ]);
 }
 
 async function api(env: Env, req: Request) {
@@ -322,13 +354,24 @@ async function api(env: Env, req: Request) {
   const method = req.method.toUpperCase();
 
   if (path === "/api/health" && method === "GET") {
-    if (!env.HALLOCALL_DB) return json({ ok:false, service:"hallocall", database:"missing", time:now() }, { status:503 });
+    if (!env.HALLOCALL_DB) return json({ ok:false, service:"hallocall", database:"missing", schema:"unavailable", time:now(), version:"auth-v4" }, { status:503 });
     try {
       await env.HALLOCALL_DB.prepare("SELECT 1 AS ok").first();
-      return json({ ok:true, service:"hallocall", database:"connected", time:now() });
+      const tables = await env.HALLOCALL_DB.prepare(
+        `SELECT name FROM sqlite_master
+         WHERE type='table' AND name IN ('users','sessions','friendships','calls','call_invites')
+         ORDER BY name`
+      ).all<{name:string}>();
+      const names = new Set(tables.results.map((row) => row.name));
+      const required = ["users","sessions","friendships","calls","call_invites"];
+      const missing = required.filter((name) => !names.has(name));
+      if (missing.length) {
+        await ensureAuthDatabase(env);
+      }
+      return json({ ok:true, service:"hallocall", database:"connected", schema:"ready", repaired:missing.length>0, time:now(), version:"auth-v4" });
     } catch (error) {
       console.error("D1 health check failed:", error);
-      return json({ ok:false, service:"hallocall", database:"error", time:now() }, { status:503 });
+      return json({ ok:false, service:"hallocall", database:"error", schema:"error", code:"D1_HEALTH_FAILED", detail:error instanceof Error ? error.message : "unknown", time:now(), version:"auth-v4" }, { status:503 });
     }
   }
   if (!env.HALLOCALL_DB) return json({ error:"اتصال D1 برای این Worker تنظیم نشده است." }, { status:503 });
@@ -518,8 +561,8 @@ async function api(env: Env, req: Request) {
       if (stateRes.ok) {
         const state = await stateRes.json() as { participants?:Array<{id:string}> };
         const participants = state.participants ?? [];
-        if (participants.length >= 2 && !participants.some(p=>p.id===auth.user.id)) {
-          return json({ error:"این کال در حال حاضر پر است. ظرفیت کال دو نفر است." }, { status:409 });
+        if (participants.length >= 8 && !participants.some(p=>p.id===auth.user.id)) {
+          return json({ error:"این کال در حال حاضر پر است. حداکثر ظرفیت این تماس ۸ نفر است." }, { status:409 });
         }
       }
     } catch {}
