@@ -36,32 +36,45 @@ async function sha256(value: string) {
   const hash = await crypto.subtle.digest("SHA-256", encoder.encode(value));
   return bytesToB64(new Uint8Array(hash));
 }
-const SERVER_KDF_ITERATIONS = 20_000;
-
 async function hashPassword(proof: string) {
   const salt = crypto.getRandomValues(new Uint8Array(16));
-  const key = await crypto.subtle.importKey("raw", encoder.encode(proof), "PBKDF2", false, ["deriveBits"]);
-  const bits = await crypto.subtle.deriveBits(
-    { name: "PBKDF2", salt, iterations: SERVER_KDF_ITERATIONS, hash: "SHA-256" },
-    key,
-    256,
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    encoder.encode("hallocall-server-salt:v3:" + bytesToB64(salt) + ":" + proof),
   );
-  return `pbkdf2${SERVER_KDF_ITERATIONS}${bytesToB64(salt)}${bytesToB64(new Uint8Array(bits))}`;
+  return `sha256$${bytesToB64(salt)}$${bytesToB64(new Uint8Array(digest))}`;
 }
-async function verifyPassword(password: string, stored: string) {
+
+async function verifyPassword(proof: string, stored: string) {
   const parts = stored.split("$");
-  if (parts.length !== 4 || parts[0] !== "pbkdf2") return false;
+  if (parts[0] === "sha256" && parts.length === 3) {
+    const expected = b64ToBytes(parts[2]);
+    const digest = await crypto.subtle.digest(
+      "SHA-256",
+      encoder.encode("hallocall-server-salt:v3:" + parts[1] + ":" + proof),
+    );
+    const actual = new Uint8Array(digest);
+    if (actual.length !== expected.length) return false;
+    let diff = 0;
+    for (let i = 0; i < actual.length; i++) diff |= actual[i] ^ expected[i];
+    return diff === 0;
+  }
+
+  // Compatibility for accounts created by the previous PBKDF2 format.
+  if (parts[0] !== "pbkdf2" || parts.length !== 4) return false;
   const iterations = Number(parts[1]);
   if (!Number.isFinite(iterations) || iterations < 1 || iterations > 100_000) return false;
   const salt = b64ToBytes(parts[2]);
   const expected = b64ToBytes(parts[3]);
-  const key = await crypto.subtle.importKey("raw", encoder.encode(password), "PBKDF2", false, ["deriveBits"]);
+  const key = await crypto.subtle.importKey("raw", encoder.encode(proof), "PBKDF2", false, ["deriveBits"]);
   const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", salt, iterations, hash: "SHA-256" }, key, expected.length * 8);
   const actual = new Uint8Array(bits);
   if (actual.length !== expected.length) return false;
-  let diff = 0; for (let i = 0; i < actual.length; i++) diff |= actual[i] ^ expected[i];
+  let diff = 0;
+  for (let i = 0; i < actual.length; i++) diff |= actual[i] ^ expected[i];
   return diff === 0;
 }
+
 function cookies(req: Request) {
   const raw = req.headers.get("Cookie") ?? "";
   return Object.fromEntries(raw.split(";").map((p) => p.trim()).filter(Boolean).map((p) => {
@@ -92,199 +105,28 @@ async function requireUser(env: Env, req: Request) {
 }
 function safeUser(row: { id: string; username: string; avatar: string }): SafeUser { return { id: row.id, username: row.username, avatar: row.avatar }; }
 
-let schemaReady: Promise<void> | null = null;
-async function ensureDatabase(env: Env) {
-  if (!schemaReady) {
-    schemaReady = (async () => {
-      await env.HALLOCALL_DB.exec(`PRAGMA foreign_keys = ON;`);
-      await env.HALLOCALL_DB.exec(`CREATE TABLE IF NOT EXISTS users (
-        id TEXT PRIMARY KEY,
-        username TEXT NOT NULL,
-        username_lower TEXT NOT NULL UNIQUE,
-        password_hash TEXT NOT NULL,
-        avatar TEXT NOT NULL DEFAULT 'ronaldo_red',
-        created_at INTEGER NOT NULL,
-        last_seen_at INTEGER NOT NULL
-      );`);
-      await env.HALLOCALL_DB.exec(`CREATE INDEX IF NOT EXISTS users_username_lower_idx ON users(username_lower);`);
-      await env.HALLOCALL_DB.exec(`CREATE INDEX IF NOT EXISTS users_last_seen_idx ON users(last_seen_at);`);
-      await env.HALLOCALL_DB.exec(`CREATE TABLE IF NOT EXISTS sessions (
-        token_hash TEXT PRIMARY KEY,
-        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        created_at INTEGER NOT NULL,
-        expires_at INTEGER NOT NULL
-      );`);
-      await env.HALLOCALL_DB.exec(`CREATE INDEX IF NOT EXISTS sessions_user_idx ON sessions(user_id);`);
-      await env.HALLOCALL_DB.exec(`CREATE INDEX IF NOT EXISTS sessions_expiry_idx ON sessions(expires_at);`);
-      await env.HALLOCALL_DB.exec(`CREATE TABLE IF NOT EXISTS friendships (
-        id TEXT PRIMARY KEY,
-        requester_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        addressee_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        status TEXT NOT NULL CHECK(status IN ('pending','accepted','declined')) DEFAULT 'pending',
-        created_at INTEGER NOT NULL,
-        responded_at INTEGER,
-        UNIQUE(requester_id, addressee_id)
-      );`);
-      await env.HALLOCALL_DB.exec(`CREATE INDEX IF NOT EXISTS friendships_requester_idx ON friendships(requester_id, status);`);
-      await env.HALLOCALL_DB.exec(`CREATE INDEX IF NOT EXISTS friendships_addressee_idx ON friendships(addressee_id, status);`);
-      await env.HALLOCALL_DB.exec(`CREATE TABLE IF NOT EXISTS calls (
-        id TEXT PRIMARY KEY,
-        code TEXT NOT NULL UNIQUE,
-        host_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        name TEXT NOT NULL DEFAULT 'Friend Call',
-        status TEXT NOT NULL CHECK(status IN ('waiting','active','ended')) DEFAULT 'waiting',
-        created_at INTEGER NOT NULL,
-        ended_at INTEGER
-      );`);
-      await env.HALLOCALL_DB.exec(`CREATE INDEX IF NOT EXISTS calls_host_idx ON calls(host_id, status);`);
-      await env.HALLOCALL_DB.exec(`CREATE TABLE IF NOT EXISTS call_invites (
-        id TEXT PRIMARY KEY,
-        call_id TEXT NOT NULL REFERENCES calls(id) ON DELETE CASCADE,
-        caller_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        callee_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        status TEXT NOT NULL CHECK(status IN ('ringing','accepted','declined','cancelled','expired')) DEFAULT 'ringing',
-        created_at INTEGER NOT NULL,
-        responded_at INTEGER
-      );`);
-      await env.HALLOCALL_DB.exec(`CREATE INDEX IF NOT EXISTS call_invites_callee_idx ON call_invites(callee_id, status, created_at);`);
-      await env.HALLOCALL_DB.exec(`CREATE INDEX IF NOT EXISTS call_invites_caller_idx ON call_invites(caller_id, status, created_at);`);
-    })().catch((error) => {
-      schemaReady = null;
-      throw error;
-    });
-  }
-  return schemaReady;
-}
-
-async function createSession(env: Env, userId: string) {
-  const token = `${uuid()}-${uuid().replaceAll("-", "")}`;
-  const ttlDays = Number(env.SESSION_TTL_DAYS || 30);
-  const expires = now() + ttlDays * 86_400_000;
-  await env.HALLOCALL_DB.prepare(`INSERT INTO sessions(token_hash,user_id,created_at,expires_at) VALUES (?1,?2,?3,?4)`)
-    .bind(await sha256(token), userId, now(), expires).run();
-  return { token, expires };
-}
-function sessionCookie(token: string, expires: number, secure = true) {
-  return `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly;${secure ? " Secure;" : ""} SameSite=Lax; Expires=${new Date(expires).toUTCString()}`;
-}
-function clearCookie(secure = true) { return `${SESSION_COOKIE}=; Path=/; HttpOnly;${secure ? " Secure;" : ""} SameSite=Lax; Max-Age=0`; }
-
-async function uniqueCallCode(env: Env) {
-  for (let i = 0; i < 8; i++) {
-    const code = randomCode();
-    const row = await env.HALLOCALL_DB.prepare(`SELECT id FROM calls WHERE code=?1 LIMIT 1`).bind(code).first();
-    if (!row) return code;
-  }
-  throw new Error("Could not create call code");
-}
-
-async function friendshipBetween(env: Env, a: string, b: string) {
-  return env.HALLOCALL_DB.prepare(`SELECT * FROM friendships WHERE (requester_id=?1 AND addressee_id=?2) OR (requester_id=?2 AND addressee_id=?1) LIMIT 1`).bind(a,b).first<{ id:string; requester_id:string; addressee_id:string; status:string }>();
-}
-
-function callJson(row: { id: string; code: string; name: string; host_id: string; status: string }) {
-  return { id: row.id, code: row.code, name: row.name, hostId: row.host_id, status: row.status };
-}
-
-async function callDO(env: Env, code: string, req: Request, user: SafeUser) {
-  const id = env.CALL_ROOMS.idFromName(code.toUpperCase());
-  const stub = env.CALL_ROOMS.get(id);
-  const headers = new Headers(req.headers);
-  headers.set("x-user-id", user.id);
-  headers.set("x-username", user.username);
-  headers.set("x-avatar", user.avatar);
-  return stub.fetch(new Request(req, { headers }));
-}
-
-export class CallRoom {
-  private readonly state: DurableObjectState;
-  private sockets = new Map<WebSocket, { id: string; username: string; avatar: string; muted: boolean }>();
-  private messages: Array<{ id:string; userId:string; username:string; avatar:string; text:string; createdAt:number }> = [];
-  private loaded = false;
-
-  constructor(state: DurableObjectState) { this.state = state; }
-  private async ensureLoaded() {
-    if (this.loaded) return;
-    this.loaded = true;
-    const saved = await this.state.storage.get<typeof this.messages>("messages");
-    if (saved) this.messages = saved.slice(-100);
-  }
-  private snapshot() {
-    return Array.from(this.sockets.values()).map((p) => ({ id:p.id, username:p.username, avatar:p.avatar, muted:p.muted }));
-  }
-  private broadcast(payload: unknown, except?: WebSocket) {
-    const text = JSON.stringify(payload);
-    for (const ws of this.sockets.keys()) if (ws !== except) { try { ws.send(text); } catch {} }
-  }
-  async fetch(request: Request) {
-    await this.ensureLoaded();
-    const url = new URL(request.url);
-    if (request.headers.get("Upgrade")?.toLowerCase() === "websocket") {
-      const id = request.headers.get("x-user-id");
-      const username = request.headers.get("x-username");
-      const avatar = request.headers.get("x-avatar") || "ronaldo_red";
-      if (!id || !username) return new Response("Unauthorized", { status: 401 });
-      for (const [socket, peer] of this.sockets) {
-        if (peer.id === id) { try { socket.close(1000, "Reconnected"); } catch {} this.sockets.delete(socket); }
-      }
-      if (this.sockets.size >= 2) return new Response("این کال دو نفره است و در حال حاضر ظرفیت آن پر است.", { status: 409 });
-      const pair = new WebSocketPair();
-      const client = pair[0], server = pair[1];
-      this.state.acceptWebSocket(server);
-      const session = { id, username, avatar, muted: false };
-      this.sockets.set(server, session);
-      server.serializeAttachment(session);
-      server.send(JSON.stringify({ type:"ready", selfId:id, participants:this.snapshot(), messages:this.messages }));
-      this.broadcast({ type:"presence", participants:this.snapshot() });
-      return new Response(null, { status:101, webSocket:client } as any);
-    }
-      if (url.pathname.endsWith("/state")) return json({ participants:this.snapshot(), messages:this.messages });
-    if (url.pathname.endsWith("/end")) {
-      const hostId = request.headers.get("x-user-id");
-      for (const [socket, peer] of this.sockets) {
-        if (peer.id !== hostId) { try { socket.send(JSON.stringify({ type:"ended" })); socket.close(1000, "Call ended"); } catch {} }
-      }
-      this.sockets.clear();
-      return json({ ok:true });
-    }
-    return json({ error:"Not found" }, { status:404 });
-  }
-  webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
-    void this.handleMessage(ws, typeof message === "string" ? message : decoder.decode(message));
-  }
-  webSocketClose(ws: WebSocket) {
-    const session = this.sockets.get(ws);
-    this.sockets.delete(ws);
-    if (session) this.broadcast({ type:"presence", participants:this.snapshot() });
-  }
-  webSocketError(ws: WebSocket) {
-    this.sockets.delete(ws);
-    this.broadcast({ type:"presence", participants:this.snapshot() });
-  }
-  private async handleMessage(ws: WebSocket, raw: string) {
-    const session = this.sockets.get(ws) || ws.deserializeAttachment() as { id:string; username:string; avatar:string; muted:boolean } | null;
-    if (!session) return;
-    try {
-      const msg = JSON.parse(raw) as { type:string; to?:string; payload?:unknown; text?:string; emoji?:string; muted?:boolean };
-      if (msg.type === "signal" && msg.to) {
-        for (const [socket, peer] of this.sockets) if (peer.id === msg.to) socket.send(JSON.stringify({ type:"signal", from:session.id, payload:msg.payload }));
-      } else if (msg.type === "mute") {
-        session.muted = !!msg.muted;
-        this.sockets.set(ws, session);
-        ws.serializeAttachment(session);
-        this.broadcast({ type:"presence", participants:this.snapshot() });
-      } else if (msg.type === "chat" && typeof msg.text === "string" && msg.text.trim()) {
-        const message = { id:uuid(), userId:session.id, username:session.username, avatar:session.avatar, text:msg.text.trim().slice(0,500), createdAt:now() };
-        this.messages.push(message); this.messages = this.messages.slice(-100);
-        await this.state.storage.put("messages", this.messages);
-        this.broadcast({ type:"chat", message });
-      } else if (msg.type === "reaction" && typeof msg.emoji === "string") {
-        this.broadcast({ type:"reaction", emoji:msg.emoji.slice(0,8), from:session.username });
-      } else if (msg.type === "typing") {
-        this.broadcast({ type:"typing", userId:session.id, active:!!msg.payload }, ws);
-      }
-    } catch {}
-  }
+async function ensureAuthDatabase(env: Env) {
+  await env.HALLOCALL_DB.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      username TEXT NOT NULL,
+      username_lower TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      avatar TEXT NOT NULL DEFAULT 'ronaldo_red',
+      created_at INTEGER NOT NULL,
+      last_seen_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS users_username_lower_idx ON users(username_lower);
+    CREATE INDEX IF NOT EXISTS users_last_seen_idx ON users(last_seen_at);
+    CREATE TABLE IF NOT EXISTS sessions (
+      token_hash TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS sessions_user_idx ON sessions(user_id);
+    CREATE INDEX IF NOT EXISTS sessions_expiry_idx ON sessions(expires_at);
+  `);
 }
 
 async function api(env: Env, req: Request) {
@@ -292,11 +134,20 @@ async function api(env: Env, req: Request) {
   const path = url.pathname.replace(/\/+$/, "") || "/";
   const method = req.method.toUpperCase();
 
-  if (path === "/api/health" && method === "GET") return json({ ok:true, service:"hallocall", time:now() });
+  if (path === "/api/health" && method === "GET") {
+    if (!env.HALLOCALL_DB) return json({ ok:false, service:"hallocall", database:"missing", time:now() }, { status:503 });
+    try {
+      await env.HALLOCALL_DB.prepare("SELECT 1 AS ok").first();
+      return json({ ok:true, service:"hallocall", database:"connected", time:now() });
+    } catch (error) {
+      console.error("D1 health check failed:", error);
+      return json({ ok:false, service:"hallocall", database:"error", time:now() }, { status:503 });
+    }
+  }
   if (!env.HALLOCALL_DB) return json({ error:"اتصال D1 برای این Worker تنظیم نشده است." }, { status:503 });
-  await ensureDatabase(env);
 
   if (path === "/api/auth/register" && method === "POST") {
+    await ensureAuthDatabase(env);
     const body = await req.json().catch(() => null) as { username?:unknown; passwordProof?:unknown; avatar?:unknown } | null;
     const username = typeof body?.username === "string" ? body.username.trim() : "";
     const passwordProofValue = typeof body?.passwordProof === "string" ? body.passwordProof : "";
@@ -312,6 +163,7 @@ async function api(env: Env, req: Request) {
     return json({ user:{id,username,avatar} }, { headers:{ "Set-Cookie":sessionCookie(session.token,session.expires, new URL(req.url).protocol === "https:") } });
   }
   if (path === "/api/auth/login" && method === "POST") {
+    await ensureAuthDatabase(env);
     const body = await req.json().catch(() => null) as { username?:unknown; passwordProof?:unknown } | null;
     const username = typeof body?.username === "string" ? body.username.trim().toLowerCase() : "";
     const passwordProofValue = typeof body?.passwordProof === "string" ? body.passwordProof : "";
@@ -532,7 +384,11 @@ export default {
       }
       return env.ASSETS.fetch(req);
     } catch (error) {
-      console.error(error);
+      console.error("HalloCall request failed:", error);
+      const message = error instanceof Error ? error.message : "unknown";
+      if (/D1|SQLITE|database/i.test(message)) {
+        return json({ error:"خطا در دیتابیس سرور. اتصال D1 را بررسی می‌کنیم." }, { status:503 });
+      }
       return json({ error:"خطای داخلی سرور" }, { status:500 });
     }
   }
