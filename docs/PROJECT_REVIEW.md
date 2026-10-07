@@ -8,7 +8,7 @@
 ## پروژه دوم — echocall
 نقاط قوت اصلی: login/register تمیزتر، ساختار صفحه‌های اصلی ساده‌تر، و جریان احراز هویت سرراست‌تر.
 
-محدودیت اصلی: منطق تماس و realtime به اندازه سناریوی دو نفره نهایی کامل نبود و برای Cloudflare به همان شکل قابل استقرار بهینه نبود.
+محدودیت اصلی: منطق تماس و realtime به اندازه سناریوی تماس گروهی نهایی کامل نبود و برای Cloudflare به همان شکل قابل استقرار بهینه نبود.
 
 ## نتیجه ادغام
 در HalloCall نسخه نهایی:
@@ -17,5 +17,5 @@
 - مدل Friendship / Invite / Call از منطق قوی‌تر پروژه اول بازطراحی و ساده‌سازی شد.
 - polling دیتابیس برای signaling حذف و WebSocket + Durable Object جایگزین شد.
 - PostgreSQL/Drizzle به D1 منتقل شد تا deployment یکپارچه روی Cloudflare انجام شود.
-- تماس به‌صورت دو نفره محدود شد تا WebRTC P2P سبک و قابل‌کنترل باقی بماند.
+- اتاق تماس اکنون تا ۲۰ شرکت‌کننده را با سقف ثابت Durable Object پشتیبانی می‌کند؛ سیگنالینگ همچنان WebSocket است و مسیر صدا WebRTC P2P باقی می‌ماند.
 - کنترل bitrate صدا، TURN آماده، presence، incoming call، chat، reaction، mute و speaking indicator به تجربه نهایی اضافه شد.

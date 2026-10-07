@@ -32,6 +32,7 @@ export type CallInfo = {
   name: string;
   hostId: string;
   status: "waiting" | "active" | "ended";
+  maxParticipants: number;
 };
 
 export type IncomingCall = {
