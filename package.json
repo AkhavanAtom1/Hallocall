@@ -4,8 +4,8 @@
   "version": "2.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
+    "dev": "node scripts/build-avatars.mjs && vite",
+    "build": "node scripts/build-avatars.mjs && vite build",
     "typecheck": "tsc --noEmit",
     "cf:dev": "npm run build && wrangler dev",
     "deploy": "npm run build && wrangler deploy",
