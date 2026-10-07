@@ -1,3 +1,5 @@
+import { CALL_CODE_LENGTH, MAX_CALL_PARTICIPANTS } from "../lib/call";
+
 export interface Env {
   HALLOCALL_DB: D1Database;
   CALL_ROOMS: DurableObjectNamespace;
@@ -20,14 +22,14 @@ const AVATARS = new Set([
   "aurora","ember","ocean","violet","mint","sunset","cosmic","rose","bolt","forest","pearl","lava"
 ]);
 
-function json(data: unknown, init: ResponseInit = {}) {
+function json(data: unknown, init: ResponseInit = {}): Response {
   return new Response(JSON.stringify(data), { ...init, headers: { "content-type": "application/json; charset=utf-8", ...(init.headers ?? {}) } });
 }
 function now() { return Date.now(); }
 function uuid() { return crypto.randomUUID(); }
 function randomCode() {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  const bytes = new Uint8Array(7); crypto.getRandomValues(bytes);
+  const bytes = new Uint8Array(CALL_CODE_LENGTH); crypto.getRandomValues(bytes);
   return Array.from(bytes, (b) => chars[b % chars.length]).join("");
 }
 function bytesToB64(bytes: Uint8Array) { let s = ""; for (const b of bytes) s += String.fromCharCode(b); return btoa(s); }
@@ -82,7 +84,6 @@ function cookies(req: Request) {
   }));
 }
 const SESSION_COOKIE = "hallocall_session";
-const MAX_CALL_PARTICIPANTS = 8;
 
 type SessionRecord = {
   token: string;
@@ -182,6 +183,7 @@ function callJson(row: { id:string; code:string; name:string; host_id:string; st
     name: row.name,
     hostId: row.host_id,
     status,
+    maxParticipants: MAX_CALL_PARTICIPANTS,
   };
 }
 
@@ -199,11 +201,13 @@ async function currentUser(env: Env, req: Request): Promise<SafeUser | null> {
   }
   return { id: row.id, username: row.username, avatar: row.avatar };
 }
-async function requireUser(env: Env, req: Request) {
+type AuthResult = { response: Response } | { user: SafeUser };
+
+async function requireUser(env: Env, req: Request): Promise<AuthResult> {
   const user = await currentUser(env, req);
-  if (!user) return { response: json({ error: "ابتدا وارد حساب شوید." }, { status: 401 }) } as const;
+  if (!user) return { response: json({ error: "ابتدا وارد حساب شوید." }, { status: 401 }) };
   await env.HALLOCALL_DB.prepare(`UPDATE users SET last_seen_at=?1 WHERE id=?2`).bind(now(), user.id).run();
-  return { user } as const;
+  return { user };
 }
 function safeUser(row: { id: string; username: string; avatar: string }): SafeUser { return { id: row.id, username: row.username, avatar: row.avatar }; }
 
@@ -261,7 +265,7 @@ export class CallRoom {
       }
 
       if (this.sockets.size >= MAX_CALL_PARTICIPANTS) {
-        return new Response("این کال به حداکثر ظرفیت ۸ نفر رسیده است.", { status:409 });
+        return new Response(`این کال به حداکثر ظرفیت ${MAX_CALL_PARTICIPANTS} نفر رسیده است.`, { status:409 });
       }
 
       const pair = new WebSocketPair();
@@ -451,7 +455,7 @@ async function ensureAuthDatabase(env: Env) {
   ]);
 }
 
-async function api(env: Env, req: Request) {
+async function api(env: Env, req: Request): Promise<Response> {
   const url = new URL(req.url);
   const path = url.pathname.replace(/\/+$/, "") || "/";
   const method = req.method.toUpperCase();
@@ -611,7 +615,7 @@ async function api(env: Env, req: Request) {
     const name = typeof body?.name === "string" && body.name.trim() ? body.name.trim().slice(0,64) : "Friend Call";
     const code = await uniqueCallCode(env); const id = uuid();
     await env.HALLOCALL_DB.prepare(`INSERT INTO calls(id,code,host_id,name,status,created_at) VALUES(?1,?2,?3,?4,'waiting',?5)`).bind(id,code,auth.user.id,name,now()).run();
-    return json({ call:{id,code,name,hostId:auth.user.id,status:"waiting"} });
+    return json({ call:{id,code,name,hostId:auth.user.id,status:"waiting",maxParticipants:MAX_CALL_PARTICIPANTS} });
   }
   const callMatch = path.match(/^\/api\/calls\/([^/]+)$/);
   if (callMatch && method === "GET") {
@@ -638,7 +642,7 @@ async function api(env: Env, req: Request) {
       env.HALLOCALL_DB.prepare(`INSERT INTO calls(id,code,host_id,name,status,created_at) VALUES(?1,?2,?3,?4,'waiting',?5)`).bind(callId,code,auth.user.id,name,now()),
       env.HALLOCALL_DB.prepare(`INSERT INTO call_invites(id,call_id,caller_id,callee_id,status,created_at) VALUES(?1,?2,?3,?4,'ringing',?5)`).bind(inviteId,callId,auth.user.id,friendId,now()),
     ]);
-    return json({ inviteId, call:{id:callId,code,name,hostId:auth.user.id,status:"waiting"} });
+    return json({ inviteId, call:{id:callId,code,name,hostId:auth.user.id,status:"waiting",maxParticipants:MAX_CALL_PARTICIPANTS} });
   }
   if (path === "/api/calls/incoming" && method === "GET") {
     const auth = await requireUser(env,req); if ("response" in auth) return auth.response;
@@ -684,7 +688,7 @@ async function api(env: Env, req: Request) {
         const state = await stateRes.json() as { participants?:Array<{id:string}> };
         const participants = state.participants ?? [];
         if (participants.length >= MAX_CALL_PARTICIPANTS && !participants.some(p=>p.id===auth.user.id)) {
-          return json({ error:"این کال در حال حاضر پر است. حداکثر ظرفیت این تماس ۸ نفر است." }, { status:409 });
+          return json({ error:`این کال در حال حاضر پر است. حداکثر ظرفیت این تماس ${MAX_CALL_PARTICIPANTS} نفر است.` }, { status:409 });
         }
       }
     } catch {}
@@ -734,7 +738,8 @@ export default {
         if (!row) return new Response("Call not found", {status:404});
         return callDO(env,code,req,user);
       }
-      return env.ASSETS.fetch(req);
+      const assetResponse = await env.ASSETS.fetch(req);
+      return assetResponse ?? new Response("Asset unavailable", { status:503 });
     } catch (error) {
       console.error("HalloCall request failed:", error);
       const message = error instanceof Error ? error.message : "unknown";

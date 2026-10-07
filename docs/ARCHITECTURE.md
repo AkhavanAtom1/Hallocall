@@ -8,7 +8,7 @@ Browser → `/ws/call/:code` → Worker auth → Durable Object instance named b
 
 The Durable Object coordinates all real-time events for one call:
 
-- participant presence
+- participant presence (up to 20 concurrent participants)
 - WebRTC signaling messages
 - mute state
 - chat messages
@@ -27,7 +27,7 @@ The application uses browser-to-browser audio. Signaling is not the media path.
 
 ## Durable Object choice
 
-Each call code maps to one Durable Object name. This makes a call's state strongly consistent and isolated from unrelated calls.
+Each call code maps to one Durable Object name. This makes a call's state strongly consistent and isolated from unrelated calls. The Durable Object enforces the shared 20-participant room limit before accepting a WebSocket.
 
 The implementation uses the Durable Object WebSocket Hibernation API so idle call rooms can hibernate while keeping client WebSocket connections alive.
 
