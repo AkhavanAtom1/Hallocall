@@ -5,8 +5,28 @@ export type AvatarId =
   | "neymar_brazil" | "neymar_barca" | "dybala_juve"
   | "ronaldo_red_alt" | "messi_argentina" | "mbappe_france"
   | "van_dijk_netherlands" | "haaland_city"
+  | "tarnished" | "malenia" | "radahn" | "ranni" | "melina"
+  | "artorias" | "solaire" | "ornstein" | "black_knight" | "nameless_king"
+  | "sekiro" | "ghost_samurai" | "kratos" | "geralt" | "doom_slayer"
   | "aurora" | "ember" | "ocean" | "violet" | "mint" | "sunset"
   | "cosmic" | "rose" | "bolt" | "forest" | "pearl" | "lava";
+
+/** Avatar ids that may still be assigned from the picker. */
+export const SELECTABLE_AVATAR_IDS = [
+  "ronaldo_red", "ronaldo_white", "ronaldo_black", "messi_barca_blue", "messi_barca_purple",
+  "ronaldinho_brazil", "ronaldinho_milan", "neymar_brazil", "neymar_barca", "dybala_juve",
+  "ronaldo_red_alt", "messi_argentina", "mbappe_france", "van_dijk_netherlands", "haaland_city",
+  "tarnished", "malenia", "radahn", "ranni", "melina",
+  "artorias", "solaire", "ornstein", "black_knight", "nameless_king",
+  "sekiro", "ghost_samurai", "kratos", "geralt", "doom_slayer",
+] as const;
+
+/** Everything the backend accepts, including retired gradient avatars. */
+export const KNOWN_AVATAR_IDS = [
+  ...SELECTABLE_AVATAR_IDS,
+  "aurora", "ember", "ocean", "violet", "mint", "sunset",
+  "cosmic", "rose", "bolt", "forest", "pearl", "lava",
+] as const;
 
 export type User = {
   id: string;

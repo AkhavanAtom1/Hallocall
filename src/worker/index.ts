@@ -1,4 +1,5 @@
 import { CALL_CODE_LENGTH, MAX_CALL_PARTICIPANTS } from "../lib/call";
+import { KNOWN_AVATAR_IDS } from "../lib/types";
 
 export interface Env {
   HALLOCALL_DB: D1Database;
@@ -15,12 +16,7 @@ type SafeUser = { id: string; username: string; avatar: string };
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,20}$/;
-const AVATARS = new Set([
-  "ronaldo_red","ronaldo_white","ronaldo_black","messi_barca_blue","messi_barca_purple",
-  "ronaldinho_brazil","ronaldinho_milan","neymar_brazil","neymar_barca","dybala_juve",
-  "ronaldo_red_alt","messi_argentina","mbappe_france","van_dijk_netherlands","haaland_city",
-  "aurora","ember","ocean","violet","mint","sunset","cosmic","rose","bolt","forest","pearl","lava"
-]);
+const AVATARS = new Set<string>(KNOWN_AVATAR_IDS);
 
 function json(data: unknown, init: ResponseInit = {}): Response {
   return new Response(JSON.stringify(data), { ...init, headers: { "content-type": "application/json; charset=utf-8", ...(init.headers ?? {}) } });

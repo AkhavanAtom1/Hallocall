@@ -1,5 +1,7 @@
 node_modules/
 dist/
-public/avatars/football-legends.webp
+public/avatars/legends.webp
+.sprite-work/
 .wrangler/
 .DS_Store
+avatar-src/
