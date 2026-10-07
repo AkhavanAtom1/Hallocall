@@ -90,7 +90,18 @@
       "kit": [
         "#123c8b",
         "#a50044"
-      ]
+      ],
+      "print": {
+        "name": "MESSI",
+        "number": "10",
+        "nameY": 0.555,
+        "numberY": 0.76,
+        "nameSize": 0.056,
+        "numberSize": 0.25,
+        "color": "#ffd400",
+        "shadow": "rgba(8,10,34,.55)",
+        "opacity": 1.0
+      }
     },
     {
       "id": "messi_barca_purple",
@@ -106,7 +117,18 @@
       "kit": [
         "#1b2f6e",
         "#8b1e3f"
-      ]
+      ],
+      "print": {
+        "name": "MESSI",
+        "number": "10",
+        "nameY": 0.575,
+        "numberY": 0.78,
+        "nameSize": 0.056,
+        "numberSize": 0.25,
+        "color": "#ffd400",
+        "shadow": "rgba(8,8,26,.6)",
+        "opacity": 1.0
+      }
     },
     {
       "id": "ronaldinho_brazil",
@@ -206,7 +228,18 @@
       "kit": [
         "#6fa8dc",
         "#f2f8fd"
-      ]
+      ],
+      "print": {
+        "name": "MESSI",
+        "number": "10",
+        "nameY": 0.565,
+        "numberY": 0.77,
+        "nameSize": 0.055,
+        "numberSize": 0.245,
+        "color": "#0b2a5b",
+        "shadow": "rgba(255,255,255,.35)",
+        "opacity": 1.0
+      }
     },
     {
       "id": "mbappe_france",

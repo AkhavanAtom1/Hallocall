@@ -7,6 +7,8 @@ import type { CallInfo, Friend, FriendRequest, IncomingCall, Participant, User }
 import { Icon } from "./components/Icon";
 import { AvatarImage } from "./components/AvatarImage";
 import { AvatarPicker } from "./components/AvatarPicker";
+import { AppAvatar } from "./components/AppAvatar";
+import { APP_AVATAR, APP_AVATAR_DEF } from "./lib/appIdentity";
 import { GlowButton } from "./components/GlowButton";
 import { Scene, spotlight } from "./components/Scene";
 import { CALL_CODE_LENGTH, MAX_CALL_PARTICIPANTS } from "./lib/call";
@@ -91,7 +93,7 @@ export function App() {
 }
 
 function BootScreen({dark}:{dark:boolean}) {
-  return <div className="app-bg boot"><Scene/><div className="boot-core"><div className="brand-mark large"><span>◈</span></div><div className="spinner"/><p>در حال آماده‌سازی HalloCall</p><small>{dark?"حالت تاریک":"حالت روشن"} • نورپردازی استادیوم روشن شد</small></div></div>;
+  return <div className="app-bg boot"><Scene/><div className="boot-core"><AppAvatar size={76} className="boot-avatar"/><div className="spinner"/><p>در حال آماده‌سازی HalloCall</p><small>{dark?"حالت تاریک":"حالت روشن"} • نورپردازی استادیوم روشن شد</small></div></div>;
 }
 
 /* ─────────────────────────── auth ─────────────────────────── */
@@ -111,7 +113,7 @@ function LoginPage({onSuccess,dark,setDark}:{onSuccess:(u:User)=>void;dark:boole
 
     <section className="auth-hero">
       <div className="brand-lockup">
-        <div className="brand-mark large"><span>◈</span></div>
+        <AppAvatar size={64} className="brand-avatar"/>
         <div><h1>Hallo<span>Call</span></h1><p>voice • friends • zero clutter</p></div>
       </div>
       <div className="hero-copy">
@@ -158,7 +160,7 @@ function AppShell({user,route,go,dark,setDark,logout,openProfile,children}:{user
   return <div className="app-bg shell">
     <Scene/>
     <aside className="sidebar glass">
-      <div className="sidebar-brand"><div className="brand-mark"><span>◈</span></div><div><b>Hallo<span>Call</span></b><small>voice workspace</small></div></div>
+      <div className="sidebar-brand"><AppAvatar size={40} className="brand-avatar"/><div><b>Hallo<span>Call</span></b><small>voice workspace</small></div></div>
       <nav>
         <NavItem icon="spark" label="خانه" active={route.page==="dashboard"} onClick={()=>go("/dashboard")}/>
         <NavItem icon="users" label="فرندها" active={route.page==="friends"} onClick={()=>go("/friends")}/>
@@ -359,6 +361,16 @@ function Profiles({user,onApply}:{user:User;onApply:(id:string)=>Promise<boolean
         </div>
       </section>;
     })}
+
+    <section className="official-card glass" onMouseMove={spotlight}>
+      <AppAvatar size={84} className="official-avatar"/>
+      <div className="official-copy">
+        <span className="eyebrow"><i/> OFFICIAL PROFILE</span>
+        <h3>{APP_AVATAR.name} <small>{APP_AVATAR.tag}</small></h3>
+        <p>پروفایل مینیمال خودِ برنامه: یک نشان لوزی با حلقهٔ نئونی بنفش تا فیروزه‌ای. همین تصویر به‌عنوان فاوآیکون، هدرها و آیکون اپ استفاده می‌شود.</p>
+      </div>
+      <div className="official-preview"><AvatarImage avatar={APP_AVATAR_DEF}/></div>
+    </section>
   </div>;
 }
 
@@ -467,8 +479,8 @@ function CallPage({user,code,go,dark,setDark}:{user:User;code:string;go:(s:strin
   const sendChat=()=>{if(!draft.trim())return;send({type:"chat",text:draft});setDraft("")};
   const react=(emoji:string)=>{send({type:"reaction",emoji});};
   const my=participants.find(p=>p.id===user.id); const maxParticipants=call?.maxParticipants??MAX_CALL_PARTICIPANTS; const qualityLabel=quality<34?"مصرف کم • مناسب اینترنت ضعیف":quality<72?"بالانس • کیفیت خوب":"کیفیت بالا • مصرف بیشتر";
-  if(error)return <main className="app-bg call-error"><Scene/><div className="error-card glass"><div className="brand-mark">◈</div><h2>ورود به کال ممکن نشد</h2><p>{error}</p><GlowButton tone="primary" icon="arrow" onClick={()=>go("/calls")}>بازگشت به کال‌ها</GlowButton></div></main>;
-  return <main className="app-bg call-page"><Scene variant="call"/><header className="call-header"><div className="call-header-left"><div className="call-brand"><div className="brand-mark"><span>◈</span></div><div><b>{call?.name??"Friend Call"}</b><span dir="ltr">#{code}</span></div></div><button className="call-code-chip" onClick={shareCall} onMouseMove={spotlight} title="کپی یا اشتراک‌گذاری لینک کال"><span>کد ورود</span><strong dir="ltr">{code}</strong><Icon name={shareNotice?"check":"copy"} size={15}/></button>{shareNotice&&<span className="share-feedback">{shareNotice}</span>}</div><div className="call-center-status"><span className={connection==="connected"?"live-dot":"live-dot warn"}/>{connection==="connected"?"متصل":"در حال اتصال دوباره…"}<small>•</small><span>{participants.length} / {maxParticipants} نفر</span></div><div className="call-head-actions"><button className="icon-btn" onClick={()=>setDark(!dark)} aria-label="تغییر تم"><Icon name={dark?"sun":"moon"}/></button><button className="leave-top" onClick={leave}><Icon name="phoneOff" size={16}/> خروج</button></div></header>
+  if(error)return <main className="app-bg call-error"><Scene/><div className="error-card glass"><AppAvatar size={54}/><h2>ورود به کال ممکن نشد</h2><p>{error}</p><GlowButton tone="primary" icon="arrow" onClick={()=>go("/calls")}>بازگشت به کال‌ها</GlowButton></div></main>;
+  return <main className="app-bg call-page"><Scene variant="call"/><header className="call-header"><div className="call-header-left"><div className="call-brand"><AppAvatar size={38} className="brand-avatar"/><div><b>{call?.name??"Friend Call"}</b><span dir="ltr">#{code}</span></div></div><button className="call-code-chip" onClick={shareCall} onMouseMove={spotlight} title="کپی یا اشتراک‌گذاری لینک کال"><span>کد ورود</span><strong dir="ltr">{code}</strong><Icon name={shareNotice?"check":"copy"} size={15}/></button>{shareNotice&&<span className="share-feedback">{shareNotice}</span>}</div><div className="call-center-status"><span className={connection==="connected"?"live-dot":"live-dot warn"}/>{connection==="connected"?"متصل":"در حال اتصال دوباره…"}<small>•</small><span>{participants.length} / {maxParticipants} نفر</span></div><div className="call-head-actions"><button className="icon-btn" onClick={()=>setDark(!dark)} aria-label="تغییر تم"><Icon name={dark?"sun":"moon"}/></button><button className="leave-top" onClick={leave}><Icon name="phoneOff" size={16}/> خروج</button></div></header>
     <section className="call-stage"><div className={`participant-stage count-${Math.min(participants.length,MAX_CALL_PARTICIPANTS)}`}>{participants.map(p=><ParticipantTile key={p.id} participant={p} self={p.id===user.id} hostId={call?.hostId}/>)}</div>{reactions.map(r=><span key={r.id} className="reaction-float" style={{left:`${r.x}%`}}>{r.emoji}</span>)}{!participants.length&&<div className="joining"><span className="spinner"/><p>در حال ورود به کال…</p></div>}{participants.length<maxParticipants&&participants.length>0&&<div className="waiting-pill glass"><span className="waiting-dot"/> ظرفیت تماس {maxParticipants-participants.length} نفر دیگر دارد — کد بالا را برای دوستانت بفرست.</div>}{participants.length>=maxParticipants&&<div className="waiting-pill glass"><span className="waiting-dot"/> این تماس به حداکثر ظرفیت {maxParticipants} نفر رسیده است.</div>}</section>
     <div className="call-toolbar-wrap"><div className="call-toolbar glass">
       {qualityOpen&&<div className="popover quality-pop"><div className="popover-head"><div><b>🎚 کنترل کیفیت صدا</b><span>{qualityLabel}</span></div><span className="quality-number">{quality}</span></div><input type="range" min="0" max="100" value={quality} onChange={e=>changeQuality(Number(e.target.value))}/><div className="range-labels"><span>ضعیف</span><span>تعادل</span><span>شفاف</span></div></div>}

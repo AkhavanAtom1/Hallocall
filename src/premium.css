@@ -1210,3 +1210,48 @@ button:focus-visible, input:focus-visible { outline: 2px solid rgba(103, 232, 24
 .profile-modal .is-gallery::-webkit-scrollbar-thumb { background: rgba(139, 92, 246, .5); border-radius: 99px; }
 .profile-modal .picker-foot { position: sticky; bottom: -4px; z-index: 3; background: var(--panel-strong); }
 .showcase-card:focus-visible, .avatar-choice:focus-visible { outline: 2px solid rgba(103, 232, 249, .9); outline-offset: 4px; }
+
+/* ───────────────────────── the app's own profile ───────────────────────── */
+
+.app-avatar {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  overflow: hidden;
+  background: #05070f;
+  box-shadow:
+    0 0 0 1px rgba(139, 92, 246, .45),
+    0 0 0 4px rgba(255, 255, 255, .035),
+    0 12px 28px rgba(0, 0, 0, .5),
+    0 0 38px -10px rgba(139, 92, 246, .85);
+  transition: transform .35s cubic-bezier(.2, .8, .2, 1), box-shadow .35s ease;
+}
+.app-avatar img { width: 100%; height: 100%; display: block; object-fit: cover; border-radius: 50%; }
+.app-avatar:before { content: ""; position: absolute; inset: -45%; z-index: 2; pointer-events: none; mix-blend-mode: screen; background: conic-gradient(from 0deg, transparent, rgba(34, 211, 238, .3), transparent 42%); animation: haloSpin 6.5s linear infinite; }
+.app-avatar:after { content: ""; position: absolute; inset: 0; z-index: 3; border-radius: 50%; pointer-events: none; box-shadow: inset 0 1px 2px rgba(255, 255, 255, .3), inset 0 -12px 26px rgba(0, 0, 0, .4); }
+.app-avatar:hover { transform: translateY(-2px) scale(1.04); box-shadow: 0 0 0 1px rgba(167, 139, 250, .7), 0 0 0 4px rgba(255, 255, 255, .05), 0 18px 38px rgba(0, 0, 0, .55), 0 0 52px -8px rgba(139, 92, 246, 1); }
+.brand-avatar { box-shadow: 0 0 0 1px rgba(139, 92, 246, .35), 0 10px 24px -10px rgba(124, 58, 237, .9), 0 0 30px -12px rgba(34, 211, 238, .9); }
+.boot-avatar { animation: appAvatarPulse 2.9s ease-in-out infinite; }
+
+@keyframes appAvatarPulse {
+  50% { box-shadow: 0 0 0 1px rgba(167, 139, 250, .85), 0 0 0 10px rgba(139, 92, 246, .07), 0 0 70px -6px rgba(124, 58, 237, .95); }
+}
+
+.official-card { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 22px; align-items: center; margin-top: 30px; padding: 24px 26px; border-radius: 26px; position: relative; overflow: hidden; }
+.official-card:before { content: ""; position: absolute; top: 0; left: 6%; right: 6%; height: 1px; background: linear-gradient(90deg, transparent, rgba(167, 139, 250, .9), rgba(103, 232, 249, .55), transparent); }
+.official-copy h3 { margin: 8px 0 6px; font-size: 20px; letter-spacing: -.02em; }
+.official-copy h3 small { margin-inline-start: 8px; font-size: 11px; font-weight: 600; color: var(--muted); }
+.official-copy p { margin: 0; max-width: 78ch; font-size: 11px; line-height: 2; color: var(--muted); }
+.official-preview { position: relative; width: 116px; height: 116px; border-radius: 50%; overflow: hidden; background: #05070f; box-shadow: 0 0 0 1px rgba(139, 92, 246, .45), 0 24px 55px rgba(0, 0, 0, .55), 0 0 60px -18px rgba(139, 92, 246, .95); }
+.official-preview .avatar-photo { transform: scale(1.02); }
+
+@media (max-width: 760px) {
+  .official-card { grid-template-columns: 1fr; justify-items: center; text-align: center; padding: 20px; }
+  .official-copy p { margin-inline: auto; }
+  .official-preview { width: 96px; height: 96px; }
+  .brand-lockup .app-avatar { width: 56px; height: 56px; }
+}
+
+:root.light .app-avatar { background: #0b1020; box-shadow: 0 0 0 1px rgba(139, 92, 246, .3), 0 14px 30px -14px rgba(45, 66, 110, .6); }

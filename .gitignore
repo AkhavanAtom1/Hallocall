@@ -1,7 +1,15 @@
 node_modules/
 dist/
 public/avatars/legends.webp
+public/avatars/hallocall.webp
 .sprite-work/
 .wrangler/
 .DS_Store
 avatar-src/
+_sheet*.png
+_row*.png
+_full.png
+_messi_*.png
+_m2.png
+_a2.png
+_grid.png

@@ -104,7 +104,10 @@ export const avatarOf = (id: string): AvatarDefinition =>
 
 /** CSS background geometry for a sprite tile, used by <AvatarImage />. */
 export function spriteStyle(avatar: AvatarDefinition) {
-  if (!avatar.src || !avatar.sprite) return undefined;
+  if (!avatar.src) return undefined;
+  if (!avatar.sprite) {
+    return { backgroundImage: `url(${avatar.src})`, backgroundSize: "cover", backgroundPosition: "center" } as const;
+  }
   const [x, y] = avatar.sprite;
   return {
     backgroundImage: `url(${avatar.src})`,
