@@ -86,6 +86,70 @@ async function requireUser(env: Env, req: Request) {
 }
 function safeUser(row: { id: string; username: string; avatar: string }): SafeUser { return { id: row.id, username: row.username, avatar: row.avatar }; }
 
+let schemaReady: Promise<void> | null = null;
+async function ensureDatabase(env: Env) {
+  if (!schemaReady) {
+    schemaReady = (async () => {
+      await env.HALLOCALL_DB.exec(`PRAGMA foreign_keys = ON;`);
+      await env.HALLOCALL_DB.exec(`CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        username TEXT NOT NULL,
+        username_lower TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        avatar TEXT NOT NULL DEFAULT 'ronaldo_red',
+        created_at INTEGER NOT NULL,
+        last_seen_at INTEGER NOT NULL
+      );`);
+      await env.HALLOCALL_DB.exec(`CREATE INDEX IF NOT EXISTS users_username_lower_idx ON users(username_lower);`);
+      await env.HALLOCALL_DB.exec(`CREATE INDEX IF NOT EXISTS users_last_seen_idx ON users(last_seen_at);`);
+      await env.HALLOCALL_DB.exec(`CREATE TABLE IF NOT EXISTS sessions (
+        token_hash TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL
+      );`);
+      await env.HALLOCALL_DB.exec(`CREATE INDEX IF NOT EXISTS sessions_user_idx ON sessions(user_id);`);
+      await env.HALLOCALL_DB.exec(`CREATE INDEX IF NOT EXISTS sessions_expiry_idx ON sessions(expires_at);`);
+      await env.HALLOCALL_DB.exec(`CREATE TABLE IF NOT EXISTS friendships (
+        id TEXT PRIMARY KEY,
+        requester_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        addressee_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        status TEXT NOT NULL CHECK(status IN ('pending','accepted','declined')) DEFAULT 'pending',
+        created_at INTEGER NOT NULL,
+        responded_at INTEGER,
+        UNIQUE(requester_id, addressee_id)
+      );`);
+      await env.HALLOCALL_DB.exec(`CREATE INDEX IF NOT EXISTS friendships_requester_idx ON friendships(requester_id, status);`);
+      await env.HALLOCALL_DB.exec(`CREATE INDEX IF NOT EXISTS friendships_addressee_idx ON friendships(addressee_id, status);`);
+      await env.HALLOCALL_DB.exec(`CREATE TABLE IF NOT EXISTS calls (
+        id TEXT PRIMARY KEY,
+        code TEXT NOT NULL UNIQUE,
+        host_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name TEXT NOT NULL DEFAULT 'Friend Call',
+        status TEXT NOT NULL CHECK(status IN ('waiting','active','ended')) DEFAULT 'waiting',
+        created_at INTEGER NOT NULL,
+        ended_at INTEGER
+      );`);
+      await env.HALLOCALL_DB.exec(`CREATE INDEX IF NOT EXISTS calls_host_idx ON calls(host_id, status);`);
+      await env.HALLOCALL_DB.exec(`CREATE TABLE IF NOT EXISTS call_invites (
+        id TEXT PRIMARY KEY,
+        call_id TEXT NOT NULL REFERENCES calls(id) ON DELETE CASCADE,
+        caller_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        callee_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        status TEXT NOT NULL CHECK(status IN ('ringing','accepted','declined','cancelled','expired')) DEFAULT 'ringing',
+        created_at INTEGER NOT NULL,
+        responded_at INTEGER
+      );`);
+      await env.HALLOCALL_DB.exec(`CREATE INDEX IF NOT EXISTS call_invites_callee_idx ON call_invites(callee_id, status, created_at);`);
+      await env.HALLOCALL_DB.exec(`CREATE INDEX IF NOT EXISTS call_invites_caller_idx ON call_invites(caller_id, status, created_at);`);
+    })().catch((error) => {
+      schemaReady = null;
+      throw error;
+    });
+  }
+  return schemaReady;
+}
+
 async function createSession(env: Env, userId: string) {
   const token = `${uuid()}-${uuid().replaceAll("-", "")}`;
   const ttlDays = Number(env.SESSION_TTL_DAYS || 30);
@@ -223,6 +287,7 @@ async function api(env: Env, req: Request) {
   const method = req.method.toUpperCase();
 
   if (path === "/api/health" && method === "GET") return json({ ok:true, service:"hallocall", time:now() });
+  await ensureDatabase(env);
 
   if (path === "/api/auth/register" && method === "POST") {
     const body = await req.json().catch(() => null) as { username?:unknown; password?:unknown; avatar?:unknown } | null;
