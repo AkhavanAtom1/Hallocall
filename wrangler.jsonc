@@ -1,0 +1,38 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "hallocall",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-10-02",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/ws/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "HALLOCALL_DB",
+      "database_name": "hallocall-db",
+      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "CALL_ROOMS",
+        "class_name": "CallRoom"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["CallRoom"]
+    }
+  ],
+  "vars": {
+    "SESSION_TTL_DAYS": "30",
+    "ONLINE_WINDOW_SECONDS": "20"
+  }
+}

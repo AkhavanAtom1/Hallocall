@@ -1,0 +1,29 @@
+{
+  "name": "hallocall-cloudflare",
+  "private": true,
+  "version": "2.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "cf:dev": "npm run build && wrangler dev",
+    "deploy": "npm run build && wrangler deploy",
+    "db:migrate:local": "wrangler d1 migrations apply hallocall-db --local",
+    "db:migrate:remote": "wrangler d1 migrations apply hallocall-db --remote",
+    "cf:typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^5.1.4",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "vite": "^7.1.7"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260922.0",
+    "typescript": "^5.9.3",
+    "wrangler": "^4.55.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0"
+  }
+}
