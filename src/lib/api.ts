@@ -1,5 +1,22 @@
 import type { CallInfo, Friend, FriendRequest, IncomingCall, User } from "./types";
 
+const encoder = new TextEncoder();
+
+function bytesToB64(bytes: Uint8Array) {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+async function passwordProof(username: string, password: string) {
+  const normalized = username.trim().toLowerCase();
+  const saltBuffer = await crypto.subtle.digest("SHA-256", encoder.encode("hallocall-client-salt:v2:" + normalized));
+  const salt = new Uint8Array(saltBuffer).slice(0, 16);
+  const key = await crypto.subtle.importKey("raw", encoder.encode(password), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", salt, iterations: 600_000, hash: "SHA-256" }, key, 256);
+  return bytesToB64(new Uint8Array(bits));
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
     credentials: "include",
@@ -13,8 +30,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   me: () => request<{ user: User | null }>("/api/auth/me"),
-  login: (username: string, password: string) => request<{ user: User }>("/api/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }),
-  register: (username: string, password: string, avatar: string) => request<{ user: User }>("/api/auth/register", { method: "POST", body: JSON.stringify({ username, password, avatar }) }),
+  login: async (username: string, password: string) => request<{ user: User }>("/api/auth/login", { method: "POST", body: JSON.stringify({ username, passwordProof: await passwordProof(username, password) }) }),
+  register: async (username: string, password: string, avatar: string) => request<{ user: User }>("/api/auth/register", { method: "POST", body: JSON.stringify({ username, passwordProof: await passwordProof(username, password), avatar }) }),
   logout: () => request<{ ok: true }>("/api/auth/logout", { method: "POST" }),
   profile: (avatar: string) => request<{ user: User }>("/api/profile", { method: "PATCH", body: JSON.stringify({ avatar }) }),
   friends: () => request<{ friends: Friend[]; requests: FriendRequest[] }>("/api/friends"),
