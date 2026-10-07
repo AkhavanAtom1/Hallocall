@@ -105,6 +105,193 @@ async function requireUser(env: Env, req: Request) {
 }
 function safeUser(row: { id: string; username: string; avatar: string }): SafeUser { return { id: row.id, username: row.username, avatar: row.avatar }; }
 
+export class CallRoom {
+  private state: DurableObjectState;
+  private sockets = new Map<WebSocket, { id:string; username:string; avatar:string; muted:boolean }>();
+  private messages: Array<{ id:string; userId:string; username:string; avatar:string; text:string; createdAt:number }> = [];
+  private loaded = false;
+
+  constructor(state: DurableObjectState) {
+    this.state = state;
+  }
+
+  private async ensureLoaded() {
+    if (this.loaded) return;
+    this.loaded = true;
+    const saved = await this.state.storage.get<typeof this.messages>("messages");
+    if (saved) this.messages = saved.slice(-100);
+  }
+
+  private snapshot() {
+    return Array.from(this.sockets.values()).map((p) => ({
+      id:p.id,
+      username:p.username,
+      avatar:p.avatar,
+      muted:p.muted,
+    }));
+  }
+
+  private broadcast(payload: unknown, except?: WebSocket) {
+    const text = JSON.stringify(payload);
+    for (const ws of this.sockets.keys()) {
+      if (ws === except) continue;
+      try {
+        ws.send(text);
+      } catch {}
+    }
+  }
+
+  async fetch(request: Request) {
+    await this.ensureLoaded();
+    const url = new URL(request.url);
+
+    if (request.headers.get("Upgrade")?.toLowerCase() === "websocket") {
+      const id = request.headers.get("x-user-id");
+      const username = request.headers.get("x-username");
+      const avatar = request.headers.get("x-avatar") || "ronaldo_red";
+      if (!id || !username) return new Response("Unauthorized", { status:401 });
+
+      for (const [socket, peer] of this.sockets) {
+        if (peer.id === id) {
+          try { socket.close(1000, "Reconnected"); } catch {}
+          this.sockets.delete(socket);
+        }
+      }
+
+      if (this.sockets.size >= 2) {
+        return new Response("این کال دو نفره است و در حال حاضر ظرفیت آن پر است.", { status:409 });
+      }
+
+      const pair = new WebSocketPair();
+      const client = pair[0];
+      const server = pair[1];
+      this.state.acceptWebSocket(server);
+
+      const session = { id, username, avatar, muted:false };
+      this.sockets.set(server, session);
+      server.serializeAttachment(session);
+
+      server.send(JSON.stringify({
+        type:"ready",
+        selfId:id,
+        participants:this.snapshot(),
+        messages:this.messages,
+      }));
+      this.broadcast({ type:"presence", participants:this.snapshot() });
+
+      return new Response(null, { status:101, webSocket:client } as any);
+    }
+
+    if (url.pathname.endsWith("/state")) {
+      return json({ participants:this.snapshot(), messages:this.messages });
+    }
+
+    if (url.pathname.endsWith("/end")) {
+      const hostId = request.headers.get("x-user-id");
+      for (const [socket, peer] of this.sockets) {
+        if (peer.id !== hostId) {
+          try { socket.send(JSON.stringify({ type:"ended" })); } catch {}
+          try { socket.close(1000, "Call ended"); } catch {}
+        }
+      }
+      this.sockets.clear();
+      return json({ ok:true });
+    }
+
+    return json({ error:"Not found" }, { status:404 });
+  }
+
+  async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
+    const raw = typeof message === "string" ? message : decoder.decode(message);
+    const session = this.sockets.get(ws) ?? ws.deserializeAttachment() as { id:string; username:string; avatar:string; muted:boolean } | null;
+    if (!session) return;
+
+    try {
+      const msg = JSON.parse(raw) as {
+        type:string;
+        to?:string;
+        payload?:unknown;
+        text?:string;
+        emoji?:string;
+        muted?:boolean;
+      };
+
+      if (msg.type === "signal" && msg.to) {
+        for (const [socket, peer] of this.sockets) {
+          if (peer.id === msg.to) {
+            try {
+              socket.send(JSON.stringify({ type:"signal", from:session.id, payload:msg.payload }));
+            } catch {}
+          }
+        }
+        return;
+      }
+
+      if (msg.type === "mute") {
+        session.muted = !!msg.muted;
+        this.sockets.set(ws, session);
+        ws.serializeAttachment(session);
+        this.broadcast({ type:"presence", participants:this.snapshot() });
+        return;
+      }
+
+      if (msg.type === "chat" && typeof msg.text === "string" && msg.text.trim()) {
+        const messageRecord = {
+          id:uuid(),
+          userId:session.id,
+          username:session.username,
+          avatar:session.avatar,
+          text:msg.text.trim().slice(0,500),
+          createdAt:now(),
+        };
+        this.messages.push(messageRecord);
+        this.messages = this.messages.slice(-100);
+        await this.state.storage.put("messages", this.messages);
+        this.broadcast({ type:"chat", message:messageRecord });
+        return;
+      }
+
+      if (msg.type === "reaction" && typeof msg.emoji === "string") {
+        this.broadcast({
+          type:"reaction",
+          emoji:msg.emoji.slice(0,8),
+          from:session.username,
+        });
+        return;
+      }
+
+      if (msg.type === "typing") {
+        this.broadcast(
+          { type:"typing", userId:session.id, active:!!msg.payload },
+          ws,
+        );
+      }
+    } catch (error) {
+      console.error("CallRoom websocket message error:", error);
+    }
+  }
+
+  async webSocketClose(ws: WebSocket) {
+    const session = this.sockets.get(ws);
+    this.sockets.delete(ws);
+    if (session) this.broadcast({ type:"presence", participants:this.snapshot() });
+  }
+
+  async webSocketError(ws: WebSocket) {
+    this.sockets.delete(ws);
+    this.broadcast({ type:"presence", participants:this.snapshot() });
+  }
+}
+
+function callDO(env: Env, code:string, req:Request, user:SafeUser) {
+  const id = env.CALL_ROOMS.idFromName(code);
+  const headers = new Headers(req.headers);
+  headers.set("x-user-id", user.id);
+  headers.set("x-username", user.username);
+  headers.set("x-avatar", user.avatar);
+  return env.CALL_ROOMS.get(id).fetch(new Request(req, { headers }));
+}
+
 async function ensureAuthDatabase(env: Env) {
   await env.HALLOCALL_DB.exec(`
     CREATE TABLE IF NOT EXISTS users (
