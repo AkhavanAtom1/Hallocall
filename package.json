@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/build-avatars.mjs && vite",
-    "build": "node scripts/build-avatars.mjs && vite build",
+    "build": "node scripts/build-avatars.mjs && tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "cf:dev": "npm run build && wrangler dev",
     "deploy": "npm run build && wrangler deploy",
