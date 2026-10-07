@@ -36,17 +36,23 @@ async function sha256(value: string) {
   const hash = await crypto.subtle.digest("SHA-256", encoder.encode(value));
   return bytesToB64(new Uint8Array(hash));
 }
-async function hashPassword(password: string) {
+const SERVER_KDF_ITERATIONS = 20_000;
+
+async function hashPassword(proof: string) {
   const salt = crypto.getRandomValues(new Uint8Array(16));
-  const key = await crypto.subtle.importKey("raw", encoder.encode(password), "PBKDF2", false, ["deriveBits"]);
-  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", salt, iterations: 150_000, hash: "SHA-256" }, key, 256);
-  return `pbkdf2$150000$${bytesToB64(salt)}$${bytesToB64(new Uint8Array(bits))}`;
+  const key = await crypto.subtle.importKey("raw", encoder.encode(proof), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits(
+    { name: "PBKDF2", salt, iterations: SERVER_KDF_ITERATIONS, hash: "SHA-256" },
+    key,
+    256,
+  );
+  return `pbkdf2${SERVER_KDF_ITERATIONS}${bytesToB64(salt)}${bytesToB64(new Uint8Array(bits))}`;
 }
 async function verifyPassword(password: string, stored: string) {
   const parts = stored.split("$");
   if (parts.length !== 4 || parts[0] !== "pbkdf2") return false;
   const iterations = Number(parts[1]);
-  if (!Number.isFinite(iterations)) return false;
+  if (!Number.isFinite(iterations) || iterations < 1 || iterations > 100_000) return false;
   const salt = b64ToBytes(parts[2]);
   const expected = b64ToBytes(parts[3]);
   const key = await crypto.subtle.importKey("raw", encoder.encode(password), "PBKDF2", false, ["deriveBits"]);
@@ -291,26 +297,27 @@ async function api(env: Env, req: Request) {
   await ensureDatabase(env);
 
   if (path === "/api/auth/register" && method === "POST") {
-    const body = await req.json().catch(() => null) as { username?:unknown; password?:unknown; avatar?:unknown } | null;
+    const body = await req.json().catch(() => null) as { username?:unknown; passwordProof?:unknown; avatar?:unknown } | null;
     const username = typeof body?.username === "string" ? body.username.trim() : "";
-    const password = typeof body?.password === "string" ? body.password : "";
+    const passwordProofValue = typeof body?.passwordProof === "string" ? body.passwordProof : "";
     const avatar = typeof body?.avatar === "string" && AVATARS.has(body.avatar) ? body.avatar : "ronaldo_red";
     if (!USERNAME_RE.test(username)) return json({ error:"نام کاربری باید ۳ تا ۲۰ کاراکتر و فقط شامل حروف انگلیسی، عدد یا _ باشد." }, { status:400 });
-    if (password.length < 6) return json({ error:"رمز عبور باید حداقل ۶ کاراکتر باشد." }, { status:400 });
+    if (!/^[A-Za-z0-9+/]{43}=$/.test(passwordProofValue)) return json({ error:"اثبات رمز عبور نامعتبر است. صفحه را تازه‌سازی و دوباره تلاش کن." }, { status:400 });
     const exists = await env.HALLOCALL_DB.prepare(`SELECT id FROM users WHERE username_lower=?1`).bind(username.toLowerCase()).first();
     if (exists) return json({ error:"این نام کاربری قبلاً ثبت شده است." }, { status:409 });
     const id = uuid();
     await env.HALLOCALL_DB.prepare(`INSERT INTO users(id,username,username_lower,password_hash,avatar,created_at,last_seen_at) VALUES(?1,?2,?3,?4,?5,?6,?6)`)
-      .bind(id,username,username.toLowerCase(),await hashPassword(password),avatar,now()).run();
+      .bind(id,username,username.toLowerCase(),await hashPassword(passwordProofValue),avatar,now()).run();
     const session = await createSession(env,id);
     return json({ user:{id,username,avatar} }, { headers:{ "Set-Cookie":sessionCookie(session.token,session.expires, new URL(req.url).protocol === "https:") } });
   }
   if (path === "/api/auth/login" && method === "POST") {
-    const body = await req.json().catch(() => null) as { username?:unknown; password?:unknown } | null;
+    const body = await req.json().catch(() => null) as { username?:unknown; passwordProof?:unknown } | null;
     const username = typeof body?.username === "string" ? body.username.trim().toLowerCase() : "";
-    const password = typeof body?.password === "string" ? body.password : "";
+    const passwordProofValue = typeof body?.passwordProof === "string" ? body.passwordProof : "";
+    if (!/^[A-Za-z0-9+/]{43}=$/.test(passwordProofValue)) return json({ error:"اثبات رمز عبور نامعتبر است. صفحه را تازه‌سازی و دوباره تلاش کن." }, { status:400 });
     const row = await env.HALLOCALL_DB.prepare(`SELECT id,username,password_hash,avatar FROM users WHERE username_lower=?1 LIMIT 1`).bind(username).first<{id:string;username:string;password_hash:string;avatar:string}>();
-    if (!row || !(await verifyPassword(password,row.password_hash))) return json({ error:"نام کاربری یا رمز عبور اشتباه است." }, { status:401 });
+    if (!row || !(await verifyPassword(passwordProofValue,row.password_hash))) return json({ error:"نام کاربری یا رمز عبور اشتباه است." }, { status:401 });
     const session = await createSession(env,row.id);
     await env.HALLOCALL_DB.prepare(`UPDATE users SET last_seen_at=?1 WHERE id=?2`).bind(now(),row.id).run();
     return json({ user:{id:row.id,username:row.username,avatar:row.avatar} }, { headers:{ "Set-Cookie":sessionCookie(session.token,session.expires, new URL(req.url).protocol === "https:") } });
