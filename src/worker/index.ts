@@ -152,7 +152,7 @@ export class CallRoom {
     if (request.headers.get("Upgrade")?.toLowerCase() === "websocket") {
       const id = request.headers.get("x-user-id");
       const username = request.headers.get("x-username");
-      const avatar = request.headers.get("x-avatar") || "aurora";
+      const avatar = request.headers.get("x-avatar") || "ronaldo_red";
       if (!id || !username) return new Response("Unauthorized", { status: 401 });
       for (const [socket, peer] of this.sockets) {
         if (peer.id === id) { try { socket.close(1000, "Reconnected"); } catch {} this.sockets.delete(socket); }
@@ -228,7 +228,7 @@ async function api(env: Env, req: Request) {
     const body = await req.json().catch(() => null) as { username?:unknown; password?:unknown; avatar?:unknown } | null;
     const username = typeof body?.username === "string" ? body.username.trim() : "";
     const password = typeof body?.password === "string" ? body.password : "";
-    const avatar = typeof body?.avatar === "string" && AVATARS.has(body.avatar) ? body.avatar : "aurora";
+    const avatar = typeof body?.avatar === "string" && AVATARS.has(body.avatar) ? body.avatar : "ronaldo_red";
     if (!USERNAME_RE.test(username)) return json({ error:"نام کاربری باید ۳ تا ۲۰ کاراکتر و فقط شامل حروف انگلیسی، عدد یا _ باشد." }, { status:400 });
     if (password.length < 6) return json({ error:"رمز عبور باید حداقل ۶ کاراکتر باشد." }, { status:400 });
     const exists = await env.HALLOCALL_DB.prepare(`SELECT id FROM users WHERE username_lower=?1`).bind(username.toLowerCase()).first();
@@ -352,6 +352,9 @@ async function api(env: Env, req: Request) {
     if (!friendship || friendship.status!=="accepted") return json({ error:"این کاربر دوست شما نیست." }, { status:403 });
     const friend = await env.HALLOCALL_DB.prepare(`SELECT id,username,avatar FROM users WHERE id=?1`).bind(friendId).first<{id:string;username:string;avatar:string}>();
     if (!friend) return json({ error:"کاربر پیدا نشد." }, { status:404 });
+    const recentInvite = await env.HALLOCALL_DB.prepare(`SELECT i.id FROM call_invites i WHERE i.caller_id=?1 AND i.callee_id=?2 AND i.status='ringing' AND i.created_at>?3 LIMIT 1`)
+      .bind(auth.user.id,friendId,now()-30_000).first();
+    if (recentInvite) return json({ error:"برای این دوست همین الان یک تماس در حال زنگ‌خوردن وجود دارد." }, { status:409 });
     const code = await uniqueCallCode(env); const callId = uuid(); const inviteId = uuid();
     const name = `Call با ${friend.username}`;
     await env.HALLOCALL_DB.batch([
