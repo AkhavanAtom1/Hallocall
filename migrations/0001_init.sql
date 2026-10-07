@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS users (
   username TEXT NOT NULL,
   username_lower TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
-  avatar TEXT NOT NULL DEFAULT 'aurora',
+  avatar TEXT NOT NULL DEFAULT 'ronaldo_red',
   created_at INTEGER NOT NULL,
   last_seen_at INTEGER NOT NULL
 );
