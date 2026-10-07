@@ -82,6 +82,7 @@ function cookies(req: Request) {
   }));
 }
 const SESSION_COOKIE = "hallocall_session";
+const MAX_CALL_PARTICIPANTS = 8;
 
 async function currentUser(env: Env, req: Request): Promise<SafeUser | null> {
   const token = cookies(req)[SESSION_COOKIE];
@@ -158,8 +159,8 @@ export class CallRoom {
         }
       }
 
-      if (this.sockets.size >= 2) {
-        return new Response("این کال دو نفره است و در حال حاضر ظرفیت آن پر است.", { status:409 });
+      if (this.sockets.size >= MAX_CALL_PARTICIPANTS) {
+        return new Response("این کال به حداکثر ظرفیت ۸ نفر رسیده است.", { status:409 });
       }
 
       const pair = new WebSocketPair();
@@ -561,7 +562,7 @@ async function api(env: Env, req: Request) {
       if (stateRes.ok) {
         const state = await stateRes.json() as { participants?:Array<{id:string}> };
         const participants = state.participants ?? [];
-        if (participants.length >= 8 && !participants.some(p=>p.id===auth.user.id)) {
+        if (participants.length >= MAX_CALL_PARTICIPANTS && !participants.some(p=>p.id===auth.user.id)) {
           return json({ error:"این کال در حال حاضر پر است. حداکثر ظرفیت این تماس ۸ نفر است." }, { status:409 });
         }
       }
