@@ -84,6 +84,107 @@ function cookies(req: Request) {
 const SESSION_COOKIE = "hallocall_session";
 const MAX_CALL_PARTICIPANTS = 8;
 
+type SessionRecord = {
+  token: string;
+  tokenHash: string;
+  userId: string;
+  createdAt: number;
+  expires: number;
+};
+
+function sessionTtlMs(env: Env) {
+  const configured = Number(env.SESSION_TTL_DAYS);
+  const days = Number.isFinite(configured) ? Math.min(365, Math.max(1, configured)) : 30;
+  return days * 24 * 60 * 60 * 1000;
+}
+
+async function buildSession(env: Env, userId: string): Promise<SessionRecord> {
+  const tokenBytes = new Uint8Array(32);
+  crypto.getRandomValues(tokenBytes);
+  const token = bytesToB64(tokenBytes);
+  const createdAt = now();
+  return {
+    token,
+    tokenHash: await sha256(token),
+    userId,
+    createdAt,
+    expires: createdAt + sessionTtlMs(env),
+  };
+}
+
+async function createSession(env: Env, userId: string) {
+  const session = await buildSession(env, userId);
+  await env.HALLOCALL_DB.prepare(
+    `INSERT INTO sessions(token_hash,user_id,created_at,expires_at) VALUES(?1,?2,?3,?4)`
+  ).bind(session.tokenHash, session.userId, session.createdAt, session.expires).run();
+  return session;
+}
+
+function sessionCookie(token: string, expires: number, secure: boolean) {
+  const maxAge = Math.max(1, Math.floor((expires - now()) / 1000));
+  return [
+    `${SESSION_COOKIE}=${encodeURIComponent(token)}`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax",
+    `Max-Age=${maxAge}`,
+    `Expires=${new Date(expires).toUTCString()}`,
+    secure ? "Secure" : "",
+  ].filter(Boolean).join("; ");
+}
+
+function clearCookie(secure: boolean) {
+  return [
+    `${SESSION_COOKIE}=`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax",
+    "Max-Age=0",
+    "Expires=Thu, 01 Jan 1970 00:00:00 GMT",
+    secure ? "Secure" : "",
+  ].filter(Boolean).join("; ");
+}
+
+async function friendshipBetween(env: Env, firstUserId: string, secondUserId: string) {
+  if (!firstUserId || !secondUserId || firstUserId === secondUserId) return null;
+  return env.HALLOCALL_DB.prepare(
+    `SELECT id, requester_id, addressee_id, status, created_at
+     FROM friendships
+     WHERE (requester_id=?1 AND addressee_id=?2)
+        OR (requester_id=?2 AND addressee_id=?1)
+     ORDER BY created_at DESC
+     LIMIT 1`
+  ).bind(firstUserId, secondUserId).first<{
+    id:string;
+    requester_id:string;
+    addressee_id:string;
+    status:"pending"|"accepted"|"declined";
+    created_at:number;
+  }>();
+}
+
+async function uniqueCallCode(env: Env) {
+  for (let attempt = 0; attempt < 12; attempt++) {
+    const code = randomCode();
+    const existing = await env.HALLOCALL_DB.prepare(
+      `SELECT id FROM calls WHERE code=?1 LIMIT 1`
+    ).bind(code).first();
+    if (!existing) return code;
+  }
+  throw new Error("Unable to allocate a unique call code.");
+}
+
+function callJson(row: { id:string; code:string; name:string; host_id:string; status:string }) {
+  const status = row.status === "active" ? "active" : row.status === "ended" ? "ended" : "waiting";
+  return {
+    id: row.id,
+    code: row.code,
+    name: row.name,
+    hostId: row.host_id,
+    status,
+  };
+}
+
 async function currentUser(env: Env, req: Request): Promise<SafeUser | null> {
   const token = cookies(req)[SESSION_COOKIE];
   if (!token) return null;
@@ -388,9 +489,23 @@ async function api(env: Env, req: Request) {
     const exists = await env.HALLOCALL_DB.prepare(`SELECT id FROM users WHERE username_lower=?1`).bind(username.toLowerCase()).first();
     if (exists) return json({ error:"این نام کاربری قبلاً ثبت شده است." }, { status:409 });
     const id = uuid();
-    await env.HALLOCALL_DB.prepare(`INSERT INTO users(id,username,username_lower,password_hash,avatar,created_at,last_seen_at) VALUES(?1,?2,?3,?4,?5,?6,?6)`)
-      .bind(id,username,username.toLowerCase(),await hashPassword(passwordProofValue),avatar,now()).run();
-    const session = await createSession(env,id);
+    const createdAt = now();
+    const passwordHash = await hashPassword(passwordProofValue);
+    const session = await buildSession(env, id);
+    try {
+      await env.HALLOCALL_DB.batch([
+        env.HALLOCALL_DB.prepare(`INSERT INTO users(id,username,username_lower,password_hash,avatar,created_at,last_seen_at) VALUES(?1,?2,?3,?4,?5,?6,?6)`)
+          .bind(id,username,username.toLowerCase(),passwordHash,avatar,createdAt),
+        env.HALLOCALL_DB.prepare(`INSERT INTO sessions(token_hash,user_id,created_at,expires_at) VALUES(?1,?2,?3,?4)`)
+          .bind(session.tokenHash,id,session.createdAt,session.expires),
+      ]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      if (/UNIQUE.*username_lower|username_lower.*UNIQUE/i.test(message)) {
+        return json({ error:"این نام کاربری قبلاً ثبت شده است." }, { status:409 });
+      }
+      throw error;
+    }
     return json({ user:{id,username,avatar} }, { headers:{ "Set-Cookie":sessionCookie(session.token,session.expires, new URL(req.url).protocol === "https:") } });
   }
   if (path === "/api/auth/login" && method === "POST") {
@@ -401,8 +516,13 @@ async function api(env: Env, req: Request) {
     if (!/^[A-Za-z0-9+/]{43}=$/.test(passwordProofValue)) return json({ error:"اثبات رمز عبور نامعتبر است. صفحه را تازه‌سازی و دوباره تلاش کن." }, { status:400 });
     const row = await env.HALLOCALL_DB.prepare(`SELECT id,username,password_hash,avatar FROM users WHERE username_lower=?1 LIMIT 1`).bind(username).first<{id:string;username:string;password_hash:string;avatar:string}>();
     if (!row || !(await verifyPassword(passwordProofValue,row.password_hash))) return json({ error:"نام کاربری یا رمز عبور اشتباه است." }, { status:401 });
-    const session = await createSession(env,row.id);
-    await env.HALLOCALL_DB.prepare(`UPDATE users SET last_seen_at=?1 WHERE id=?2`).bind(now(),row.id).run();
+    const session = await buildSession(env, row.id);
+    await env.HALLOCALL_DB.batch([
+      env.HALLOCALL_DB.prepare(`INSERT INTO sessions(token_hash,user_id,created_at,expires_at) VALUES(?1,?2,?3,?4)`)
+        .bind(session.tokenHash,row.id,session.createdAt,session.expires),
+      env.HALLOCALL_DB.prepare(`UPDATE users SET last_seen_at=?1 WHERE id=?2`)
+        .bind(now(),row.id),
+    ]);
     return json({ user:{id:row.id,username:row.username,avatar:row.avatar} }, { headers:{ "Set-Cookie":sessionCookie(session.token,session.expires, new URL(req.url).protocol === "https:") } });
   }
   if (path === "/api/auth/logout" && method === "POST") {
