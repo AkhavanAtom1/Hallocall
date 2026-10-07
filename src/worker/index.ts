@@ -456,7 +456,7 @@ async function api(env: Env, req: Request) {
   const method = req.method.toUpperCase();
 
   if (path === "/api/health" && method === "GET") {
-    if (!env.HALLOCALL_DB) return json({ ok:false, service:"hallocall", database:"missing", schema:"unavailable", time:now(), version:"auth-v4" }, { status:503 });
+    if (!env.HALLOCALL_DB) return json({ ok:false, service:"hallocall", database:"missing", schema:"unavailable", time:now(), version:"auth-v5" }, { status:503 });
     try {
       await env.HALLOCALL_DB.prepare("SELECT 1 AS ok").first();
       const tables = await env.HALLOCALL_DB.prepare(
@@ -470,10 +470,10 @@ async function api(env: Env, req: Request) {
       if (missing.length) {
         await ensureAuthDatabase(env);
       }
-      return json({ ok:true, service:"hallocall", database:"connected", schema:"ready", repaired:missing.length>0, time:now(), version:"auth-v4" });
+      return json({ ok:true, service:"hallocall", database:"connected", schema:"ready", repaired:missing.length>0, time:now(), version:"auth-v5" });
     } catch (error) {
       console.error("D1 health check failed:", error);
-      return json({ ok:false, service:"hallocall", database:"error", schema:"error", code:"D1_HEALTH_FAILED", detail:error instanceof Error ? error.message : "unknown", time:now(), version:"auth-v4" }, { status:503 });
+      return json({ ok:false, service:"hallocall", database:"error", schema:"error", code:"D1_HEALTH_FAILED", detail:error instanceof Error ? error.message : "unknown", time:now(), version:"auth-v5" }, { status:503 });
     }
   }
   if (!env.HALLOCALL_DB) return json({ error:"اتصال D1 برای این Worker تنظیم نشده است." }, { status:503 });
