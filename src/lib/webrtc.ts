@@ -22,8 +22,17 @@ export async function getIceServers(): Promise<RTCIceServer[]> {
   try {
     const res = await fetch("/api/webrtc/ice");
     if (!res.ok) return fallback;
-    const data = await res.json();
-    return Array.isArray(data.iceServers) && data.iceServers.length ? data.iceServers : fallback;
+    const data: unknown = await res.json();
+    if (
+      typeof data === "object" &&
+      data !== null &&
+      "iceServers" in data &&
+      Array.isArray((data as { iceServers?: unknown }).iceServers)
+    ) {
+      const iceServers = (data as { iceServers: unknown[] }).iceServers;
+      return iceServers.length ? (iceServers as RTCIceServer[]) : fallback;
+    }
+    return fallback;
   } catch {
     return fallback;
   }
