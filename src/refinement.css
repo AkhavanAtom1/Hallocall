@@ -11,20 +11,24 @@ body { min-height: 100vh; background: var(--bg); color: var(--text); }
     var(--bg);
 }
 
-/* There is one restrained glow per side; no constantly moving beams, grid,
-   spark field, ticker, breathing cards or animated fake statistics. */
-.scene { opacity: .66; }
+/* Layered but calm atmosphere: slow auroras in four colours, a faint grid,
+   twinkling sparks and soft beams. Everything here still collapses under
+   `prefers-reduced-motion` (see the media query at the bottom). */
+.scene { opacity: .9; }
 .scene-aurora {
   mix-blend-mode: screen;
-  filter: blur(112px);
-  will-change: auto;
-  animation: none !important;
+  filter: blur(104px);
+  will-change: transform;
 }
-.aur-a { opacity: .22; }
-.aur-b { opacity: .16; }
-.aur-c, .aur-d, .scene-beams, .scene-grid, .scene-sparks, .scene-noise { display: none !important; }
+.aur-a { opacity: .3; }
+.aur-b { opacity: .24; }
+.aur-c { opacity: .2; }
+.aur-d { opacity: .16; }
+.scene-beams { opacity: .45; }
+.scene-grid { opacity: .7; }
+.scene-sparks i { opacity: 0; }
 .scene-vignette {
-  background: radial-gradient(120% 92% at 50% 0%, transparent 45%, rgba(2, 4, 10, .22) 100%);
+  background: radial-gradient(120% 92% at 50% 0%, transparent 45%, rgba(2, 4, 10, .26) 100%);
 }
 
 .glass {
@@ -34,10 +38,7 @@ body { min-height: 100vh; background: var(--bg); color: var(--text); }
 }
 .page, .page > section, .page > .cat-section { animation: none !important; }
 .auth-card,
-.hero-orbit,
-.orbit-ring,
 .spark-bars i,
-.avatar-ticker,
 .avatar-choice .choice-halo,
 .app-avatar::before,
 .online-dot,
@@ -53,12 +54,9 @@ body { min-height: 100vh; background: var(--bg); color: var(--text); }
 .avatar-stage.speaking::before,
 .avatar-stage.muted::before,
 .avatar-stage.speaking .avatar-face,
-.security-note span,
-.ticker-track,
-.hero-copy h2 em {
+.security-note span {
   animation: none !important;
 }
-.avatar-ticker { display: none !important; }
 .avatar-stage.speaking::before { transform: none; }
 .glow-btn { transition: transform 150ms ease, box-shadow 150ms ease, filter 150ms ease; }
 .glow-btn:hover { transform: translateY(-1px); }

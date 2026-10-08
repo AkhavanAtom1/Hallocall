@@ -8,10 +8,10 @@
 - هش امن رمز عبور با PBKDF2/SHA-256 در Worker Runtime
 - انتخاب آواتار هنگام ثبت‌نام و یک صفحه کامل «پروفایل‌ها» برای تغییر آن
 - ۳۰ آواتار در ۴ کالکشن: فوتبال، Elden Ring، Dark Souls و آیکون‌های بازی
-- نمایش همهٔ پروفایل‌ها از یک sprite تک‌فایل ۶×۵ (webp)؛ سه پرترهٔ اختصاصی مسی با لباس‌های بارسلونا و آرژانتین بازسازی و جایگزین شده‌اند
+- همهٔ پروفایل‌ها به‌صورت فایل‌های جداگانهٔ webp در پوشهٔ `image/` در گیت‌هاب نگهداری می‌شوند (تک‌منبع برای کل مجموعه) و هنگام build به `public/avatars/` کپی می‌شوند؛ سه پرترهٔ اختصاصی مسی با لباس‌های بارسلونا و آرژانتین هم همین‌جا هستند
 - فیلتر کالکشن (chip) روی گالری آواتار، پیش‌نمایش زنده و ذخیره آنی روی پروفایل
-- سیستم دکمه‌ای GlowButton با سایه و spotlight ملایم، همراه با حالت‌های focus قابل‌دیدن برای صفحه‌کلید
-- پس‌زمینهٔ کم‌حرکت و سبک؛ انیمیشن‌های تزئینی دائمی صفحهٔ خانه حذف شده‌اند و `prefers-reduced-motion` رعایت می‌شود
+- سیستم دکمه‌ای GlowButton با سایهٔ نئونی آرام؛ انیمیشن «عبور نور» (shine sweep) روی دکمه‌ها به درخواست کاربر حذف شده و فقط lift ملایم hover باقی مانده است
+- صحنهٔ پس‌زمینهٔ لایه‌ای و رنگی: چهار aurora (بنفش/فیروزه‌ای/صورتی/کهربایی)، grid محو، ذرات درخشان و vignette؛ در صفحهٔ ورود نوار متحرک هر ۳۰ پروفایل نمایش داده می‌شود و `prefers-reduced-motion` رعایت می‌شود
 - جست‌وجوی کاربران با Username
 - Friend Request / Accept / Decline / Remove
 - Presence آنلاین/آفلاین
@@ -53,14 +53,15 @@
 
 ```text
 hallocall/
+├─ image/                     # منبع اصلی هر ۳۰ پروفایل (webp، ۵۱۲×۵۱۲) + سه رندر مسی
+├─ scripts/compose-avatars.mjs # تبدیل خروجی خام `.gen/` به webp نهایی در image/ (ImageMagick)
+├─ scripts/build-avatars.mjs  # کپی image/ به public/avatars/ هنگام build
 ├─ src/
 │  ├─ App.tsx                 # صفحات اصلی و جریان کاربری
 │  ├─ main.tsx
 │  ├─ styles.css              # تم پایه
 │  ├─ premium.css             # لایهٔ بصری اصلی
 │  ├─ refinement.css           # اصلاح responsive، accessibility و کاهش موشن
-│  ├─ assets/avatar-renders/   # سه تصویر بهینه‌شدهٔ مسی (آرژانتین و بارسلونا)
-│  ├─ assets/legends-avatars.b64  # sprite آواتارها (base64، خروجی compose-avatars)
 │  ├─ components/CallRoom.tsx # اتاق تماس، WebRTC، چت و تنظیم بیت‌ریت
 │  ├─ components/Icon.tsx
 │  ├─ components/Scene.tsx    # پس‌زمینهٔ ثابت و helper spotlight
@@ -73,7 +74,6 @@ hallocall/
 │  ├─ lib/types.ts
 │  ├─ lib/webrtc.ts            # TURN/STUN + bitrate control
 │  └─ worker/index.ts          # Worker API + Durable Object
-├─ scripts/compose-avatars.mjs  # ساخت sprite از avatar-src/*.png (dev، ImageMagick)
 ├─ migrations/0001_init.sql   # D1 schema
 ├─ wrangler.jsonc
 ├─ vite.config.ts

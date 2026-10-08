@@ -124,6 +124,10 @@ function LoginPage({onSuccess,dark,setDark}:{onSuccess:(u:User)=>void;dark:boole
         <Feature icon="call" title="One‑tap call" text="تماس مستقیم با یک کلیک"/>
         <Feature icon="signal" title="Adaptive audio" text="کنترل کیفیت برای اینترنت ضعیف"/>
       </div>
+      <div className="avatar-ticker" aria-hidden="true">
+        <div className="ticker-track">{[...AVATARS, ...AVATARS].map((a, i) => <span key={`${a.id}-${i}`} style={{"--accent":a.accent} as CSSProperties}><AvatarImage avatar={a}/></span>)}</div>
+        <b>۳۰ پروفایل اختصاصی • فوتبال، Elden Ring، Dark Souls و افسانه‌های بازی</b>
+      </div>
     </section>
 
     <section className="auth-card glass" onMouseMove={spotlight}>
@@ -207,7 +211,7 @@ function Dashboard({user,go,onToast}:{user:User;go:(s:string)=>void;onToast:(s:s
             <GlowButton tone="ghost" size="lg" icon="users" onClick={()=>go("/friends")}>مدیریت فرندها</GlowButton>
           </div>
         </div>
-        <div className="hero-orbit"><div className="orbit-ring r1"><span className="orbit-sat s1"><AvatarImage avatar={SHOWCASE[0]}/></span></div><div className="orbit-ring r2"><span className="orbit-sat s2"><AvatarImage avatar={SHOWCASE[3]}/></span></div><div className="orbit-core">🎧</div></div>
+        <div className="hero-orbit"><div className="orbit-ring r1"><span className="orbit-sat s1"><AvatarImage avatar={SHOWCASE[0]}/></span><span className="orbit-sat s3"><AvatarImage avatar={SHOWCASE[4]}/></span></div><div className="orbit-ring r2"><span className="orbit-sat s2"><AvatarImage avatar={SHOWCASE[3]}/></span><span className="orbit-sat s4"><AvatarImage avatar={SHOWCASE[5]}/></span></div><div className="orbit-core">🎧</div></div>
       </div>
 
       <div className="stat-card glass" onMouseMove={spotlight}>
@@ -219,6 +223,7 @@ function Dashboard({user,go,onToast}:{user:User;go:(s:string)=>void;onToast:(s:s
       <div className="stat-card glass" onMouseMove={spotlight}>
         <div className="stat-icon purple"><Icon name="signal"/></div>
         <div><span>بازهٔ کیفیت صدا</span><b>۱۲–۹۶ kbps</b></div>
+        <div className="spark-bars" aria-hidden="true"><i/><i/><i/><i/><i/><i/><i/><i/></div>
         <button onClick={()=>go("/calls")}>رفتن به کال‌ها <Icon name="arrow" size={15}/></button>
       </div>
     </section>
@@ -450,6 +455,7 @@ function Calls({go,onToast}:{go:(s:string)=>void;onToast:(s:string)=>void}){
         </div>
       </div>
 
+      <div className="calls-side">
       <div className="join-card glass" onMouseMove={spotlight}>
         <div className="join-icon"><Icon name="link"/></div>
         <span className="eyebrow"><i/> JOIN A CALL</span>
@@ -458,12 +464,13 @@ function Calls({go,onToast}:{go:(s:string)=>void;onToast:(s:string)=>void}){
         <form onSubmit={join}><input value={code} onChange={e=>setCode(e.target.value.toUpperCase().replace(/[^A-HJ-NP-Z2-9]/g,"").slice(0,CALL_CODE_LENGTH))} placeholder="مثلاً 7J9K2WP" dir="ltr" maxLength={CALL_CODE_LENGTH} minLength={CALL_CODE_LENGTH} pattern="[A-HJ-NP-Z2-9]{7}" autoComplete="off" aria-label="کد کال" required/><GlowButton className="wide" tone="cyan" trailingIcon={busy?undefined:"arrow"} disabled={busy||code.length!==CALL_CODE_LENGTH} loading={busy?<span className="tiny-spinner"/>:undefined}>{busy?"در حال بررسی…":"ورود به کال"}</GlowButton></form>
         <div className="tip"><Icon name="info" size={16}/><span>برای اینترنت ضعیف، داخل تماس می‌توانی کیفیت صدا را پایین بیاوری.</span></div>
       </div>
-    </section>
 
-    <section className="quality-banner glass">
-      <div className="quality-badge"><Icon name="signal"/></div>
-      <div><b>Adaptive Audio</b><span>کنترل کیفیت صدا از 12 تا 96 kbps؛ مناسب برای اینترنت‌های ناپایدار.</span></div>
-      <div className="quality-demo"><span>LOW</span><i/><i/><i/><i/><i/><span>HIGH</span></div>
+      <section className="quality-banner glass">
+        <div className="quality-badge"><Icon name="signal"/></div>
+        <div><b>Adaptive Audio</b><span>کنترل کیفیت صدا از 12 تا 96 kbps؛ مناسب برای اینترنت‌های ناپایدار.</span></div>
+        <div className="quality-demo"><span>LOW</span><i/><i/><i/><i/><i/><span>HIGH</span></div>
+      </section>
+      </div>
     </section>
   </div>;
 }

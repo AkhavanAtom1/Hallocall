@@ -3,14 +3,15 @@ import catalogJson from "./avatars.catalog.json";
 
 /**
  * The single source of truth for every profile avatar.
- * `src/lib/avatars.catalog.json` is shared with `scripts/compose-avatars.mjs`,
- * so the sprite sheet and the UI can never drift apart.
+ * Each of the 30 profiles lives as its own WebP portrait inside the `image/`
+ * folder at the repository root; `scripts/build-avatars.mjs` copies them to
+ * `public/avatars/` so the UI serves them as individual files and the whole
+ * collection stays together in one place on GitHub.
  */
 type CatalogAvatar = {
   id: string;
   no: number;
   file: string;
-  source?: string;
   cat: string;
   name: string;
   tag: string;
@@ -21,16 +22,14 @@ type CatalogAvatar = {
 };
 
 type Catalog = {
-  sprite: { cols: number; rows: number; tile: number; file: string };
+  source: { folder: string; publicPath: string; ext: string; size: number };
   categories: { id: string; icon: string; fa: string; en: string; hint: string }[];
   avatars: CatalogAvatar[];
 };
 
 const catalog = catalogJson as unknown as Catalog;
 
-export const SPRITE_SRC = catalog.sprite.file;
-export const SPRITE_COLS = catalog.sprite.cols;
-export const SPRITE_ROWS = catalog.sprite.rows;
+export const AVATAR_SOURCE = catalog.source;
 export const AVATAR_CATEGORIES = catalog.categories;
 
 export type AvatarDefinition = {
@@ -50,8 +49,6 @@ export type AvatarDefinition = {
   ring: string;
   emoji: string;
   src?: string;
-  /** Column / row inside the sprite sheet. */
-  sprite?: readonly [number, number];
 };
 
 function rgba(hex: string, alpha: number) {
@@ -62,7 +59,7 @@ function rgba(hex: string, alpha: number) {
 
 const CATEGORY_EMOJI: Record<string, string> = { football: "⚽", elden: "🌿", souls: "⚔️", bonus: "🔥" };
 
-export const AVATARS: AvatarDefinition[] = catalog.avatars.map((entry, index) => ({
+export const AVATARS: AvatarDefinition[] = catalog.avatars.map((entry) => ({
   id: entry.id as AvatarId,
   no: entry.no,
   label: `${entry.name} • ${entry.tag}`,
@@ -76,8 +73,7 @@ export const AVATARS: AvatarDefinition[] = catalog.avatars.map((entry, index) =>
   glow: rgba(entry.accent, 0.62),
   ring: rgba(entry.accent, 0.9),
   emoji: CATEGORY_EMOJI[entry.cat] ?? "◈",
-  src: SPRITE_SRC,
-  sprite: [index % SPRITE_COLS, Math.floor(index / SPRITE_COLS)] as const,
+  src: `${catalog.source.publicPath}/${entry.file}`,
 }));
 
 /** Legacy gradient avatars: kept so old accounts still render, no longer selectable. */
@@ -103,16 +99,8 @@ export const DEFAULT_AVATAR = AVATARS[0].id;
 export const avatarOf = (id: string): AvatarDefinition =>
   ALL_AVATARS.find((a) => a.id === id) ?? AVATARS[0];
 
-/** CSS background geometry for a sprite tile, used by <AvatarImage />. */
+/** CSS background style for a single portrait file (falls back to emoji + gradient). */
 export function spriteStyle(avatar: AvatarDefinition) {
   if (!avatar.src) return undefined;
-  if (!avatar.sprite) {
-    return { backgroundImage: `url(${avatar.src})`, backgroundSize: "cover", backgroundPosition: "center" } as const;
-  }
-  const [x, y] = avatar.sprite;
-  return {
-    backgroundImage: `url(${avatar.src})`,
-    backgroundSize: `${SPRITE_COLS * 100}% ${SPRITE_ROWS * 100}%`,
-    backgroundPosition: `${(x / (SPRITE_COLS - 1)) * 100}% ${(y / (SPRITE_ROWS - 1)) * 100}%`,
-  } as const;
+  return { backgroundImage: `url(${avatar.src})`, backgroundSize: "cover", backgroundPosition: "center" } as const;
 }
