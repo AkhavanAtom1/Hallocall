@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import "./styles.css";
 import "./premium.css";
 import "./refinement.css";
+import "./lite.css";
 import { App } from "./App";
 
 createRoot(document.getElementById("root")!).render(

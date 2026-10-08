@@ -5,7 +5,14 @@
       "icon": "⚽",
       "fa": "افسانه‌های فوتبال",
       "en": "FOOTBALL LEGENDS",
-      "hint": "۱۵ پروفایل فوتبالی؛ شماره و رنگ پیراهن، همراه با سه پرترهٔ بازسازی‌شدهٔ مسی"
+      "hint": "افسانه‌های فوتبال با پیراهن دقیق همان فصل: رونالدو، مسی، مالدینی، راموس و زلاتان"
+    },
+    {
+      "id": "heroes",
+      "icon": "🦸",
+      "fa": "ابرقهرمان‌ها",
+      "en": "SUPERHERO ICONS",
+      "hint": "پرتره‌های سینمایی اسپایدرمن، بتمن و سوپرمن در سبک کالکتیبل"
     },
     {
       "id": "elden",
@@ -405,6 +412,126 @@
       "mono": "DS",
       "accent": "#f43f5e",
       "accent2": "#14532d"
+    },
+    {
+      "id": "ronaldo_united_0708",
+      "no": 31,
+      "file": "31-ronaldo-united-0708.webp",
+      "cat": "football",
+      "name": "رونالدو",
+      "tag": "یونایتد ۲۰۰۷/۰۸ • شماره ۷",
+      "jersey": "RONALDO",
+      "mono": "7",
+      "accent": "#ef4444",
+      "accent2": "#7f1d1d"
+    },
+    {
+      "id": "ronaldo_madrid_1718",
+      "no": 32,
+      "file": "32-ronaldo-madrid-1718.webp",
+      "cat": "football",
+      "name": "رونالدو",
+      "tag": "رئال مادرید ۲۰۱۷/۱۸ • شماره ۷",
+      "jersey": "RONALDO",
+      "mono": "7",
+      "accent": "#e2e8f0",
+      "accent2": "#64748b"
+    },
+    {
+      "id": "ronaldo_juve_1819",
+      "no": 33,
+      "file": "33-ronaldo-juve-1819.webp",
+      "cat": "football",
+      "name": "رونالدو",
+      "tag": "یوونتوس ۲۰۱۸/۱۹ • شماره ۷",
+      "jersey": "RONALDO",
+      "mono": "7",
+      "accent": "#cbd5e1",
+      "accent2": "#111827"
+    },
+    {
+      "id": "ronaldo_united_concept",
+      "no": 34,
+      "file": "34-ronaldo-united-concept.webp",
+      "cat": "football",
+      "name": "رونالدو",
+      "tag": "یونایتد ۲۰۲۰/۲۱ • کانسپت",
+      "jersey": "RONALDO",
+      "mono": "7",
+      "accent": "#ef4444",
+      "accent2": "#7f1d1d"
+    },
+    {
+      "id": "ronaldo_alnassr",
+      "no": 35,
+      "file": "35-ronaldo-alnassr.webp",
+      "cat": "football",
+      "name": "رونالدو",
+      "tag": "النصر ۲۰۲۳/۲۴ • شماره ۷",
+      "jersey": "RONALDO",
+      "mono": "7",
+      "accent": "#fbbf24",
+      "accent2": "#1d4ed8"
+    },
+    {
+      "id": "ronaldo_portugal_2018",
+      "no": 36,
+      "file": "36-ronaldo-portugal-2018.webp",
+      "cat": "football",
+      "name": "رونالدو",
+      "tag": "پرتغال ۲۰۱۸ • شماره ۷",
+      "jersey": "RONALDO",
+      "mono": "7",
+      "accent": "#dc2626",
+      "accent2": "#14532d"
+    },
+    {
+      "id": "messi_barca_2012",
+      "no": 37,
+      "file": "37-messi-barca-2012.webp",
+      "cat": "football",
+      "name": "مسی",
+      "tag": "بارسلونا ۲۰۱۱/۱۲ • شماره ۱۰",
+      "jersey": "MESSI",
+      "mono": "10",
+      "accent": "#2563eb",
+      "accent2": "#991b1b"
+    },
+    {
+      "id": "maldini_milan_0203",
+      "no": 38,
+      "file": "38-maldini-milan-0203.webp",
+      "cat": "football",
+      "name": "مالدینی",
+      "tag": "میلان ۲۰۰۲/۰۳ • شماره ۳",
+      "jersey": "MALDINI",
+      "mono": "3",
+      "accent": "#dc2626",
+      "accent2": "#111827"
+    },
+    {
+      "id": "ramos_madrid_1718",
+      "no": 39,
+      "file": "39-ramos-madrid-1718.webp",
+      "cat": "football",
+      "name": "راموس",
+      "tag": "رئال مادرید ۲۰۱۷/۱۸ • شماره ۴",
+      "jersey": "RAMOS",
+      "mono": "4",
+      "accent": "#e2e8f0",
+      "accent2": "#64748b"
+    },
+    {
+      "id": "ibrahimovic_milan_1112",
+      "no": 40,
+      "file": "40-ibrahimovic-milan-1112.webp",
+      "cat": "football",
+      "name": "زلاتان",
+      "tag": "میلان ۲۰۱۱/۱۲ • شماره ۱۱",
+      "jersey": "IBRAHIMOVIC",
+      "mono": "11",
+      "accent": "#dc2626",
+      "accent2": "#111827"
     }
   ],
   "source": {

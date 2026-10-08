@@ -1,0 +1,521 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   HalloCall — Lite layer (v4.0)
+   --------------------------------------------------------------------------
+   Performance pass. The app is meant to stay open in a second window while
+   the user plays heavy games and talks with friends, so every effect that
+   keeps the GPU busy all the time is gone:
+
+     • no infinite key-frame animations at all (only the loading spinners)
+     • no backdrop-filter / blur() / mix-blend-mode on any UI surface
+     • no mousemove-driven spotlights, no animated auroras, grids or sparks
+     • static, pre-composited gradient background + static scene art
+     • lazy-loaded avatar <img> tiles instead of CSS background sprites
+
+   The look stays premium: deeper glass panels, static neon rims, a designed
+   hero illustration and the same violet → cyan house palette.
+   Loaded last, so it wins over styles.css / premium.css / refinement.css.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── 1. motion budget ─────────────────────────────────────────────────── */
+
+html { scroll-behavior: auto; }
+
+*, *::before, *::after {
+  animation: none !important;
+  transition-duration: .14s !important;
+  transition-timing-function: ease !important;
+}
+
+/* the only two loops that stay: they are short-lived and carry real meaning */
+.spinner, .tiny-spinner { animation: spin .7s linear infinite !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner, .tiny-spinner { animation: none !important; }
+}
+
+/* ── 2. kill every expensive compositing effect ───────────────────────── */
+
+.glass,
+.feature,
+.panel-head,
+.auth-card,
+.live-pill,
+.icon-btn,
+.theme-btn,
+.sidebar,
+.search-results,
+.chat-drawer,
+.popover,
+.call-toolbar,
+.call-header,
+.waiting-pill,
+.toast,
+.quality-banner,
+.profile-modal,
+.incoming-card,
+.audio-unlock,
+.tone-ghost,
+.modal-backdrop,
+.incoming-backdrop {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* translucent overlays stay readable without a blur pass */
+.modal-backdrop,
+.incoming-backdrop { background: radial-gradient(circle at 50% 42%, rgba(124, 58, 237, .16), rgba(4, 6, 13, .88)); }
+.toast, .waiting-pill { background: linear-gradient(158deg, rgba(20, 25, 44, .96), rgba(10, 13, 24, .98)); }
+:root.light .toast, :root.light .waiting-pill { background: #ffffff; }
+
+/* no blend modes anywhere: they force the browser into extra compositing */
+.showcase-card:before,
+.card-lamp,
+.stage-sheen,
+.reaction-float,
+.brand-mark span,
+.avatar-stage:before,
+.avatar-stage.speaking:before,
+.avatar-stage.muted:before,
+.call-toolbar-wrap,
+.avatar-stage { mix-blend-mode: normal; filter: none; }
+
+/* decorative layers that only existed for motion */
+.card-lamp,
+.scene-aurora,
+.scene-beams,
+.scene-grid,
+.scene-sparks,
+.scene-noise,
+.hero-orbit,
+.orbit-ring,
+.orbit-sat,
+.orbit-core,
+.pulse-ring,
+.call-lights,
+.app-avatar::before,
+.stage-sheen,
+.choice-halo { display: none !important; }
+
+/* the hero keeps its neon rim line, but the blurred floor glow goes away */
+.hero-card:before { z-index: 3; }
+.hero-card:after { display: none !important; }
+
+/* soft lights stay, but as plain gradients instead of blurred layers */
+.call-stage::before,
+.showcase-face::after,
+.btn-floor,
+.spark-bars i,
+.quality-demo i,
+.mute-badge,
+.speaking-dot { filter: none !important; }
+
+.avatar-ticker { mask-image: none; -webkit-mask-image: none; }
+.ticker-track {
+  animation: none !important;
+  width: 100%;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+.ticker-track span { width: 42px; height: 42px; }
+.scene-vignette { display: none !important; }
+
+/* ── 3. static background & scene ─────────────────────────────────────── */
+
+body { background: #04060d; }
+
+.app-bg {
+  background:
+    radial-gradient(60rem 40rem at 10% -10%, rgba(124, 58, 237, .22), transparent 58%),
+    radial-gradient(52rem 36rem at 100% 102%, rgba(6, 182, 212, .14), transparent 56%),
+    linear-gradient(180deg, #070a14, #04060d 62%);
+}
+
+.scene {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+  opacity: 1;
+  background: radial-gradient(120% 85% at 50% 0%, transparent 46%, rgba(2, 4, 10, .34) 100%);
+}
+
+/* one painted-on "light column" instead of four animated auroras */
+.scene::before {
+  content: "";
+  position: absolute;
+  inset: -20% -10% auto -10%;
+  height: 78vh;
+  background:
+    radial-gradient(38rem 22rem at 24% 8%, rgba(139, 92, 246, .20), transparent 70%),
+    radial-gradient(34rem 20rem at 82% 2%, rgba(34, 211, 238, .13), transparent 72%);
+}
+
+.scene-call::before {
+  background:
+    radial-gradient(36rem 20rem at 50% 0%, rgba(139, 92, 246, .18), transparent 72%),
+    radial-gradient(30rem 18rem at 12% 22%, rgba(34, 211, 238, .10), transparent 74%);
+}
+
+:root.light body { background: #f2f5fb; }
+:root.light .scene { display: none !important; }
+:root.light .app-bg {
+  background:
+    radial-gradient(58rem 38rem at 8% -12%, rgba(124, 58, 237, .12), transparent 62%),
+    radial-gradient(52rem 36rem at 100% 105%, rgba(6, 182, 212, .10), transparent 60%),
+    #f2f5fb;
+}
+
+/* ── 4. glass surfaces without backdrop blur ──────────────────────────── */
+
+.glass {
+  background: linear-gradient(158deg, rgba(20, 25, 44, .95), rgba(10, 13, 24, .97));
+  box-shadow:
+    0 22px 55px rgba(2, 4, 12, .42),
+    0 0 0 1px rgba(255, 255, 255, .03),
+    inset 0 1px 0 rgba(255, 255, 255, .075);
+}
+
+.glass:after { opacity: .42; }
+
+:root.light .glass {
+  background: linear-gradient(158deg, #ffffff, #f6f8fd);
+  box-shadow: 0 18px 44px rgba(45, 66, 110, .12), inset 0 1px 0 #fff;
+}
+:root.light .glass:after { opacity: .3; }
+
+.glow-btn:hover { filter: none; }
+.glow-btn .btn-floor { opacity: .55; }
+.btn-floor { filter: none; background: radial-gradient(ellipse at center, var(--sh), transparent 70%); }
+
+.card-lamp { display: none !important; }
+
+/* ── 5. home hero: a designed image instead of an animated orbit ──────── */
+
+.hero-card {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  min-height: 420px;
+  background: #080c17;
+}
+
+.hero-art {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: #080c17 url("/site/hero-voice.webp") left center / cover no-repeat;
+  transform: scale(1.01);
+}
+
+.hero-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(
+    270deg,
+    rgba(4, 7, 15, .96) 0%,
+    rgba(4, 7, 15, .90) 34%,
+    rgba(4, 7, 15, .62) 62%,
+    rgba(4, 7, 15, .30) 100%
+  );
+}
+
+.hero-card .hero-content { position: relative; z-index: 2; max-width: 58%; }
+
+:root.light .hero-card { background: #eef2fa; }
+:root.light .hero-scrim {
+  background: linear-gradient(
+    270deg,
+    rgba(252, 253, 255, .97) 0%,
+    rgba(250, 252, 255, .92) 36%,
+    rgba(247, 250, 255, .66) 64%,
+    rgba(240, 245, 253, .34) 100%
+  );
+}
+
+/* ── 6. calls page: illustration instead of pulsing rings ─────────────── */
+
+.call-illustration {
+  position: relative;
+  height: auto;
+  aspect-ratio: 1 / 1;
+  max-height: 320px;
+  border-radius: 24px;
+  overflow: hidden;
+  background: #0b1020;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .07), 0 18px 40px rgba(2, 4, 12, .45);
+}
+
+.call-illustration img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+/* ── 7. call chat: a real docked panel the user can actually use ──────── */
+
+:root { --dock-space: 126px; }
+
+.call-toolbar-wrap { bottom: max(20px, env(safe-area-inset-bottom)); }
+
+.chat-drawer {
+  position: fixed;
+  top: auto;
+  right: 18px;
+  left: auto;
+  width: min(360px, calc(100vw - 36px));
+  bottom: calc(var(--dock-space) + env(safe-area-inset-bottom));
+  height: min(58vh, 520px);
+  height: min(58dvh, 520px);
+  max-height: none;
+  border-radius: 22px;
+  z-index: 26;
+}
+
+.chat-drawer .chat-list { min-height: 0; }
+.chat-drawer .chat-compose { flex: 0 0 auto; }
+
+.chat-compose button { min-width: 44px; }
+.chat-compose input { font-size: 13px; }
+.chat-msg p { font-size: 12px; }
+.chat-msg span { font-size: 10px; }
+.chat-head b { font-size: 13px; }
+.chat-head span { font-size: 10px; }
+
+/* ── 8. avatar tiles: lazy <img> inside the circular frame ────────────── */
+
+.avatar-photo img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.avatar-photo {
+  background-image: none !important;
+  transform: none;
+  background-color: #080c18;
+}
+.stage-avatar .avatar-photo,
+.avatar-face .avatar-photo,
+.showcase-face .avatar-photo,
+.official-preview .avatar-photo { transform: none; }
+
+.showcase-card:hover .showcase-face .avatar-photo,
+.profile-chip:hover .avatar-photo,
+.avatar:hover .avatar-photo,
+.friend-card:hover .avatar-photo,
+.friend-row:hover .avatar-photo,
+.result-row:hover .avatar-photo { transform: none; filter: none; }
+
+/* ── 9. mobile: real thumb-sized UI, safe areas, no overflow ──────────── */
+
+@media (max-width: 760px) {
+  :root { --dock-space: 118px; }
+
+  body { overscroll-behavior-y: none; }
+
+  .content { padding: 12px 4px calc(22px + env(safe-area-inset-bottom)); }
+  .page { max-width: 100%; }
+  .page-top { gap: 10px; margin-bottom: 18px; }
+  .page-top h1 { font-size: 23px; }
+  .page-top p, .section-head p { font-size: 11.5px; line-height: 1.9; }
+
+  .eyebrow { font-size: 10px; }
+  .field > span, .field-label { font-size: 12px; }
+  .field small, .field-label small { font-size: 10px; }
+  .field input, .search-wrap input, .chat-compose input, .join-card input { font-size: 15px; padding: 13px 13px; }
+
+  .stat-card span, .tip, .empty-card p { font-size: 11.5px; }
+  .stat-card b { font-size: 20px; }
+  .stat-card button, .text-btn { font-size: 11.5px; min-height: 40px; }
+  .nav-item span:not(.nav-icon) { font-size: 10.5px; }
+  .sidebar .nav-item { min-height: 52px; }
+
+  .glow-btn { min-height: 46px; }
+  .glow-btn.size-sm { min-height: 42px; }
+  .icon-btn, .theme-btn { width: 44px; height: 44px; }
+
+  /* hero: full-width art with a vertical scrim so nothing overlaps */
+  .hero-card { min-height: 0; padding: 22px 20px 24px; }
+  .hero-art { background-position: left 28%; background-size: cover; }
+  .hero-scrim {
+    background: linear-gradient(180deg, rgba(4, 7, 15, .92) 0%, rgba(4, 7, 15, .80) 46%, rgba(4, 7, 15, .55) 100%);
+  }
+  :root.light .hero-scrim {
+    background: linear-gradient(180deg, rgba(252, 253, 255, .96) 0%, rgba(250, 252, 255, .9) 48%, rgba(244, 248, 255, .7) 100%);
+  }
+  .hero-card .hero-content { max-width: 100%; }
+  .hero-content h2 { font-size: 27px; }
+  .hero-content p { font-size: 12.5px; line-height: 2; }
+  .hero-actions { margin-top: 18px; gap: 9px; }
+  .hero-actions .glow-btn { flex: 1 1 46%; }
+
+  .call-illustration { aspect-ratio: 16 / 11; max-height: 220px; }
+  .create-call { gap: 16px; }
+  .call-text h2, .join-card h2 { font-size: 21px; }
+  .call-text p, .join-card p { font-size: 12.5px; }
+  .join-card input { font-size: 17px; }
+  .call-flow-note { font-size: 9.5px; }
+
+  .quality-banner b { font-size: 13px; }
+  .quality-banner span { font-size: 11.5px; line-height: 1.8; }
+
+  .avatar-showcase { grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 10px; }
+  .showcase-face { width: 72px; height: 72px; }
+  .showcase-meta b { font-size: 12.5px; }
+  .showcase-meta small { font-size: 10px; line-height: 1.7; }
+  .showcase-card { padding: 14px 10px 12px; gap: 10px; }
+
+  .cat-chip { font-size: 11.5px; padding: 8px 11px; }
+  .profile-stage { padding: 18px 16px; }
+  .stage-copy h3 { font-size: 22px; }
+  .stage-copy p { font-size: 12px; }
+  .stage-avatar { width: 108px; height: 108px; }
+  .stage-current { font-size: 11px; }
+
+  .profile-modal { padding: 20px 16px; }
+  .is-compact .avatar-grid, .is-gallery .avatar-grid { grid-template-columns: repeat(4, 1fr); gap: 12px 8px; }
+
+  .friend-card, .friend-row { padding: 13px; }
+  .card-user b, .row-user b { font-size: 13px; }
+  .card-user span, .row-user span { font-size: 10.5px; }
+  .friend-card .call-mini { width: 44px; height: 44px; }
+  .row-remove { width: 40px; height: 40px; }
+
+  .incoming-card { padding: 22px 18px; }
+  .incoming-card h3 { font-size: 19px; }
+
+  /* call room */
+  .call-header { padding: 9px 10px; row-gap: 4px; }
+  .call-brand b { font-size: 12.5px; }
+  .call-center-status { font-size: 9.5px; }
+  .call-stage { min-height: calc(100dvh - 190px); }
+  .participant-name b { font-size: 12.5px; }
+  .participant-name span, .participant-name em { font-size: 10px; }
+  .audio-status { font-size: 9.5px !important; }
+  .tool { min-width: 58px; }
+  .tool-circle { width: 46px; height: 46px; border-radius: 16px; }
+  .tool small { font-size: 8.5px; }
+  .leave-btn { width: 50px; height: 50px; flex: 0 0 50px; }
+  .call-toolbar { padding: 9px 8px; gap: 3px; }
+  .waiting-pill { font-size: 10px; }
+
+  /* chat becomes a full-width sheet docked above the toolbar */
+  .chat-drawer {
+    left: 8px;
+    right: 8px;
+    width: auto;
+    height: min(56vh, 440px);
+    height: min(56dvh, 440px);
+    border-radius: 20px;
+  }
+  .chat-list { padding: 12px; }
+  .chat-msg p { font-size: 12.5px; }
+  .chat-compose { padding: 9px; }
+
+  .quality-pop, .emoji-pop { width: min(340px, calc(100vw - 20px)); min-width: 0; }
+}
+
+@media (max-width: 380px) {
+  .hero-content h2 { font-size: 24px; }
+  .avatar-showcase { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* landscape phones: keep the toolbar + chat usable */
+@media (max-width: 900px) and (max-height: 460px) {
+  :root { --dock-space: 104px; }
+  .chat-drawer { height: min(70vh, 320px); }
+  .call-toolbar .tool { min-height: 62px; }
+}
+
+/* ── 10. phone navigation: a real bottom bar ──────────────────────────── */
+
+@media (min-width: 761px) {
+  /* on desktop the theme switch + logout live in the sidebar, so the extra
+     account row inside the profile sheet is hidden */
+  .modal-actions { display: none; }
+}
+
+@media (max-width: 760px) {
+  .sidebar {
+    position: fixed;
+    top: auto;
+    left: 8px;
+    right: 8px;
+    bottom: max(8px, env(safe-area-inset-bottom));
+    width: auto;
+    z-index: 60;
+    padding: 6px 8px;
+    border-radius: 22px;
+    display: block;
+  }
+  .sidebar-brand,
+  .sidebar-spacer,
+  .sidebar-actions,
+  .mobile-theme-toggle { display: none !important; }
+  .sidebar nav { display: flex; align-items: stretch; gap: 5px; margin: 0; }
+  .sidebar .nav-item {
+    flex: 1 1 0;
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
+    min-height: 56px;
+    padding: 6px 2px;
+    border-radius: 16px;
+    font-size: 10.5px;
+  }
+  .sidebar .nav-item i { display: none; }
+  .sidebar .nav-icon { width: 26px; height: 26px; }
+  .sidebar .nav-item.active .nav-icon { background: none; box-shadow: none; }
+
+  /* profile sheet opens from the avatar cell of the bottom bar */
+  .profile-chip {
+    display: grid;
+    place-items: center;
+    flex: 0 0 58px;
+    width: 58px;
+    height: 56px;
+    padding: 0;
+    border-radius: 16px;
+  }
+  .profile-chip .profile-text,
+  .profile-chip > svg { display: none; }
+  .profile-chip .avatar { width: 34px; height: 34px; }
+
+  .content { padding-bottom: calc(94px + env(safe-area-inset-bottom)); }
+
+  /* account row inside the profile sheet */
+  .modal-backdrop { padding: 10px; align-items: end; }
+  .profile-modal {
+    width: 100%;
+    max-height: 88vh;
+    max-height: 88dvh;
+    padding: 18px 15px calc(16px + env(safe-area-inset-bottom));
+    border-radius: 22px;
+  }
+  .modal-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+  .modal-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    min-height: 48px;
+    padding: 0 10px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    color: var(--text);
+    background: rgba(255, 255, 255, .05);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .modal-action.danger { color: #fda4af; border-color: rgba(251, 113, 133, .3); background: rgba(251, 113, 133, .1); }
+
+  .toast { bottom: calc(98px + env(safe-area-inset-bottom)); max-width: calc(100vw - 32px); }
+}

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties, FormEvent, ReactNode } from "react";
 import { api } from "./lib/api";
-import { AVATAR_CATEGORIES, AVATARS, DEFAULT_AVATAR, avatarOf } from "./lib/avatars";
+import { AVATAR_CATEGORIES, AVATARS, DEFAULT_AVATAR, avatarOf, faNum } from "./lib/avatars";
 import type { Friend, FriendRequest, IncomingCall, User } from "./lib/types";
 import { Icon } from "./components/Icon";
 import { AvatarImage } from "./components/AvatarImage";
@@ -9,11 +9,9 @@ import { AvatarPicker } from "./components/AvatarPicker";
 import { AppAvatar } from "./components/AppAvatar";
 import { APP_AVATAR, APP_AVATAR_DEF } from "./lib/appIdentity";
 import { GlowButton } from "./components/GlowButton";
-import { Scene, spotlight } from "./components/Scene";
+import { Scene } from "./components/Scene";
 import { CALL_CODE_LENGTH, MAX_CALL_PARTICIPANTS } from "./lib/call";
 import { CallPage } from "./components/CallRoom";
-
-const SHOWCASE = ["ronaldo_red","messi_barca_blue","ronaldinho_brazil","haaland_city","malenia","kratos","solaire","geralt"];
 
 type Route = { page:"login" } | { page:"dashboard" } | { page:"friends" } | { page:"profiles" } | { page:"calls" } | { page:"call"; code:string };
 
@@ -85,7 +83,7 @@ export function App() {
       {effectivePage==="calls" && <Calls go={go} onToast={setToast}/>}
     </AppShell>
     {incoming && <IncomingOverlay call={incoming} busy={incomingBusy} onAccept={()=>respondIncoming("accept")} onDecline={()=>respondIncoming("decline")} />}
-    {profileOpen && <ProfileModal user={user} onClose={()=>setProfileOpen(false)} onApply={async(id)=>{ const ok=await applyAvatar(id); if(ok) setProfileOpen(false); return ok; }} />}
+    {profileOpen && <ProfileModal user={user} dark={dark} onToggleTheme={()=>setDark(!dark)} onLogout={logout} onClose={()=>setProfileOpen(false)} onApply={async(id)=>{ const ok=await applyAvatar(id); if(ok) setProfileOpen(false); return ok; }} />}
     {toast && <div className="toast glass" role="status" aria-live="polite"><Icon name="check" size={14}/><span>{toast}</span></div>}
   </>;
 }
@@ -125,12 +123,12 @@ function LoginPage({onSuccess,dark,setDark}:{onSuccess:(u:User)=>void;dark:boole
         <Feature icon="signal" title="Adaptive audio" text="کنترل کیفیت برای اینترنت ضعیف"/>
       </div>
       <div className="avatar-ticker" aria-hidden="true">
-        <div className="ticker-track">{[...AVATARS, ...AVATARS].map((a, i) => <span key={`${a.id}-${i}`} style={{"--accent":a.accent} as CSSProperties}><AvatarImage avatar={a}/></span>)}</div>
-        <b>۳۰ پروفایل اختصاصی • فوتبال، Elden Ring، Dark Souls و افسانه‌های بازی</b>
+        <div className="ticker-track">{AVATARS.slice(0, 14).map((a) => <span key={a.id} style={{"--accent":a.accent} as CSSProperties}><AvatarImage avatar={a}/></span>)}</div>
+        <b>{faNum(AVATARS.length)} پروفایل اختصاصی • فوتبال، ابرقهرمان‌ها، Elden Ring، Dark Souls و افسانه‌های بازی</b>
       </div>
     </section>
 
-    <section className="auth-card glass" onMouseMove={spotlight}>
+    <section className="auth-card glass">
       <div className="card-lamp" aria-hidden="true"/>
       <div className="auth-card-top"><div><p className="muted">خوش آمدی</p><h3>{mode==="login"?"وارد حساب شو":"حساب خودت را بساز"}</h3></div><div className="mini-status"><span/> آنلاین در هر دو حالت</div></div>
       <div className="segmented" role="group" aria-label="نوع ورود"><button type="button" className={mode==="login"?"active":""} aria-pressed={mode==="login"} onClick={()=>{setMode("login");setError("")}}>ورود</button><button type="button" className={mode==="register"?"active":""} aria-pressed={mode==="register"} onClick={()=>{setMode("register");setError("")}}>ثبت‌نام</button></div>
@@ -165,7 +163,7 @@ function AppShell({user,route,go,dark,setDark,logout,openProfile,children}:{user
         <button className="mobile-theme-toggle" onClick={()=>setDark(!dark)} title="تغییر تم" aria-label="تغییر تم"><Icon name={dark?"sun":"moon"}/></button>
       </nav>
       <div className="sidebar-spacer"/>
-      <button className="profile-chip" onClick={openProfile} onMouseMove={spotlight}>
+      <button className="profile-chip" onClick={openProfile}>
         <div className="avatar" style={{"--accent":avatar.accent, boxShadow:`0 0 0 1px ${avatar.ring}, 0 0 26px ${avatar.glow}`} as CSSProperties}><AvatarImage avatar={avatar}/><span className="online-dot"/></div>
         <div className="profile-text"><b>{user.username}</b><span>{avatar.name} • {avatar.tag}</span></div>
         <Icon name="settings" size={17}/>
@@ -200,8 +198,9 @@ function Dashboard({user,go,onToast}:{user:User;go:(s:string)=>void;onToast:(s:s
     <PageTop eyebrow="WORKSPACE" title={`سلام ${user.username} 👋`} desc="همه‌چیز برای یک تماس سریع آماده است." action={<GlowButton tone="ghost" size="sm" icon="mask" onClick={()=>go("/profiles")}>گالری پروفایل</GlowButton>}/>
 
     <section className="dashboard-grid">
-      <div className="hero-card glass" onMouseMove={spotlight}>
-        <div className="card-lamp" aria-hidden="true"/>
+      <div className="hero-card glass">
+        <div className="hero-art" aria-hidden="true"/>
+        <div className="hero-scrim" aria-hidden="true"/>
         <div className="hero-content">
           <span className="eyebrow"><i/> ONLINE VOICE</span>
           <h2>صدای دوستت<br/><em>همین نزدیکی است.</em></h2>
@@ -211,16 +210,15 @@ function Dashboard({user,go,onToast}:{user:User;go:(s:string)=>void;onToast:(s:s
             <GlowButton tone="ghost" size="lg" icon="users" onClick={()=>go("/friends")}>مدیریت فرندها</GlowButton>
           </div>
         </div>
-        <div className="hero-orbit"><div className="orbit-ring r1"><span className="orbit-sat s1"><AvatarImage avatar={SHOWCASE[0]}/></span><span className="orbit-sat s3"><AvatarImage avatar={SHOWCASE[4]}/></span></div><div className="orbit-ring r2"><span className="orbit-sat s2"><AvatarImage avatar={SHOWCASE[3]}/></span><span className="orbit-sat s4"><AvatarImage avatar={SHOWCASE[5]}/></span></div><div className="orbit-core">🎧</div></div>
       </div>
 
-      <div className="stat-card glass" onMouseMove={spotlight}>
+      <div className="stat-card glass">
         <div className="stat-icon green"><Icon name="users"/></div>
         <div><span>فرندهای آنلاین</span><b>{online.length}</b></div>
         <button onClick={()=>go("/friends")}>مشاهدهٔ فرندها <Icon name="arrow" size={15}/></button>
       </div>
 
-      <div className="stat-card glass" onMouseMove={spotlight}>
+      <div className="stat-card glass">
         <div className="stat-icon purple"><Icon name="signal"/></div>
         <div><span>بازهٔ کیفیت صدا</span><b>۱۲–۹۶ kbps</b></div>
         <div className="spark-bars" aria-hidden="true"><i/><i/><i/><i/><i/><i/><i/><i/></div>
@@ -234,9 +232,9 @@ function Dashboard({user,go,onToast}:{user:User;go:(s:string)=>void;onToast:(s:s
       {online.length===0&&<EmptyCard title="فعلاً کسی آنلاین نیست" text="وقتی یکی از فرندها آنلاین شود، دکمه تماس اینجا ظاهر می‌شود." icon="moon"/>}
     </div>
 
-    <section className="collection-card glass" onMouseMove={spotlight}>
+    <section className="collection-card glass">
       <div className="collection-head">
-        <div><span className="eyebrow"><i/> NEW AVATAR SET</span><h3>۳۰ پروفایل تازه برای انتخاب</h3><p>{AVATAR_CATEGORIES.map(c=>`${c.icon} ${c.fa}`).join("  •  ")}</p></div>
+        <div><span className="eyebrow"><i/> NEW AVATAR SET</span><h3>{faNum(AVATARS.length)} پروفایل تازه برای انتخاب</h3><p>{AVATAR_CATEGORIES.map(c=>`${c.icon} ${c.fa}`).join("  •  ")}</p></div>
         <GlowButton tone="cyan" icon="spark" onClick={()=>go("/profiles")}>باز کردن گالری</GlowButton>
       </div>
       <div className="collection-strip">{AVATARS.slice(0,14).map(a=><span key={a.id} title={a.label} style={{"--accent-glow":a.glow} as CSSProperties}><AvatarImage avatar={a}/></span>)}</div>
@@ -246,7 +244,7 @@ function Dashboard({user,go,onToast}:{user:User;go:(s:string)=>void;onToast:(s:s
 
 function FriendCard({friend,onCall}:{friend:Friend;onCall:()=>void}){
   const a=avatarOf(friend.avatar);
-  return <div className="friend-card glass" onMouseMove={spotlight}>
+  return <div className="friend-card glass">
     <div className="card-avatar" style={{"--accent":a.accent, background:a.gradient} as CSSProperties}><AvatarImage avatar={a}/><span className="speck"/></div>
     <div className="card-user"><b>{friend.username}</b><span><i/> آنلاین</span></div>
     <GlowButton tone="mint" size="sm" className="call-mini" icon="call" onClick={onCall} aria-label={`تماس با ${friend.username}`}/>
@@ -259,7 +257,7 @@ function EmptyCard({title,text,icon}:{title:string;text:string;icon:string}){ret
 
 function FriendRow({friend,onCall,onRemove}:{friend:Friend;onCall:()=>void;onRemove?:()=>void}){
   const a=avatarOf(friend.avatar);
-  return <div className="friend-row glass" onMouseMove={spotlight}>
+  return <div className="friend-row glass">
     <div className="row-avatar" style={{"--accent":a.accent, background:a.gradient} as CSSProperties}><AvatarImage avatar={a}/><span className={friend.online?"online-ring on":"online-ring"}/></div>
     <div className="row-user"><b>{friend.username}</b><span className={friend.online?"online-label":"offline-label"}>{friend.online?"● آنلاین":"○ آفلاین"}</span></div>
     <div className="row-actions">
@@ -334,8 +332,8 @@ function Profiles({user,onApply}:{user:User;onApply:(id:string)=>Promise<boolean
   const save=async()=>{setSaving(true);const ok=await onApply(pending);setSaving(false);if(!ok)return};
 
   return <div className="page profiles-page">
-    <PageTop eyebrow="PROFILES" title="گالری پروفایل‌ها" desc="۳۰ آواتار تازه؛ ۱۵ افسانه فوتبال، ۵ شخصیت Elden Ring، ۵ شوالیه Dark Souls و ۵ آیکون بازی."/>
-    <section className="profile-stage glass" onMouseMove={spotlight}>
+    <PageTop eyebrow="PROFILES" title="گالری پروفایل‌ها" desc={`${faNum(AVATARS.length)} آواتار در ${faNum(AVATAR_CATEGORIES.length)} کالکشن: افسانه‌های فوتبال، ابرقهرمان‌ها، Elden Ring، Dark Souls و آیکون‌های بازی.`}/>
+    <section className="profile-stage glass">
       <div className="card-lamp" aria-hidden="true"/>
       <div className="stage-avatar" style={{"--accent":chosen.accent, background:chosen.gradient, boxShadow:`0 0 0 1px ${chosen.ring}, 0 26px 70px ${chosen.glow}`} as CSSProperties}>
         <AvatarImage avatar={chosen}/>
@@ -368,7 +366,7 @@ function Profiles({user,onApply}:{user:User;onApply:(id:string)=>Promise<boolean
       </section>;
     })}
 
-    <section className="official-card glass" onMouseMove={spotlight}>
+    <section className="official-card glass">
       <AppAvatar size={84} className="official-avatar"/>
       <div className="official-copy">
         <span className="eyebrow"><i/> OFFICIAL PROFILE</span>
@@ -380,7 +378,7 @@ function Profiles({user,onApply}:{user:User;onApply:(id:string)=>Promise<boolean
   </div>;
 }
 
-function ProfileModal({user,onClose,onApply}:{user:User;onClose:()=>void;onApply:(id:string)=>Promise<boolean>}){
+function ProfileModal({user,dark,onToggleTheme,onLogout,onClose,onApply}:{user:User;dark:boolean;onToggleTheme:()=>void;onLogout:()=>void;onClose:()=>void;onApply:(id:string)=>Promise<boolean>}){
   const [avatar,setAvatar]=useState<string>(user.avatar);
   const [saving,setSaving]=useState(false);
   const dialogRef=useRef<HTMLDivElement>(null);
@@ -414,6 +412,10 @@ function ProfileModal({user,onClose,onApply}:{user:User;onClose:()=>void;onApply
       </div>
       <AvatarPicker value={avatar} onChange={setAvatar}/>
       <GlowButton className="wide" tone="primary" size="lg" icon="check" disabled={saving||avatar===user.avatar} loading={saving?<span className="tiny-spinner"/>:undefined} onClick={save}>{avatar===user.avatar?"بدون تغییر":"ذخیره تغییرات"}</GlowButton>
+      <div className="modal-actions">
+        <button type="button" className="modal-action" onClick={onToggleTheme}><Icon name={dark?"sun":"moon"} size={16}/>{dark?"حالت روشن":"حالت تاریک"}</button>
+        <button type="button" className="modal-action danger" onClick={onLogout}><Icon name="logout" size={16}/>خروج از حساب</button>
+      </div>
     </div>
   </div>;
 }
@@ -438,12 +440,10 @@ function Calls({go,onToast}:{go:(s:string)=>void;onToast:(s:string)=>void}){
   return <div className="page">
     <PageTop eyebrow="CALLS" title="کال صوتی" desc={`کال بساز، کد را بالای صفحه ببین و تا ${MAX_CALL_PARTICIPANTS} نفر را دور هم جمع کن.`}/>
     <section className="calls-grid">
-      <div className="create-call glass" onMouseMove={spotlight}>
+      <div className="create-call glass">
         <div className="card-lamp" aria-hidden="true"/>
         <div className="call-illustration">
-          <div className="pulse-ring p1"/><div className="pulse-ring p2"/><div className="pulse-ring p3"/>
-          <div className="call-orb">🎧</div>
-          <div className="call-lights" aria-hidden="true"><i/><i/><i/></div>
+          <img src="/site/call-room.webp" alt="" width={768} height={768} loading="lazy" decoding="async"/>
         </div>
         <div className="call-text">
           <span className="eyebrow"><i/> PRIVATE ROOM</span>
@@ -456,7 +456,7 @@ function Calls({go,onToast}:{go:(s:string)=>void;onToast:(s:string)=>void}){
       </div>
 
       <div className="calls-side">
-      <div className="join-card glass" onMouseMove={spotlight}>
+      <div className="join-card glass">
         <div className="join-icon"><Icon name="link"/></div>
         <span className="eyebrow"><i/> JOIN A CALL</span>
         <h2>کد را وارد کن.</h2>
