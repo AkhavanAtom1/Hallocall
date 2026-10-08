@@ -1,10 +1,4 @@
 {
-  "sprite": {
-    "cols": 6,
-    "rows": 5,
-    "tile": 320,
-    "file": "/avatars/legends.webp"
-  },
   "categories": [
     {
       "id": "football",
@@ -39,7 +33,7 @@
     {
       "id": "ronaldo_red",
       "no": 1,
-      "file": "01-ronaldo-red.png",
+      "file": "01-ronaldo-red.webp",
       "cat": "football",
       "name": "رونالدو",
       "tag": "قرمز • شماره ۷",
@@ -51,7 +45,7 @@
     {
       "id": "ronaldo_white",
       "no": 2,
-      "file": "02-ronaldo-white.png",
+      "file": "02-ronaldo-white.webp",
       "cat": "football",
       "name": "رونالدو",
       "tag": "سفید • شماره ۷",
@@ -63,7 +57,7 @@
     {
       "id": "ronaldo_black",
       "no": 3,
-      "file": "03-ronaldo-juve.png",
+      "file": "03-ronaldo-juve.webp",
       "cat": "football",
       "name": "رونالدو",
       "tag": "یوونتوس • شماره ۷",
@@ -79,33 +73,31 @@
     {
       "id": "messi_barca_blue",
       "no": 4,
-      "file": "04-messi-barca-blue.png",
+      "file": "04-messi-barca-blue.webp",
       "cat": "football",
       "name": "مسی",
       "tag": "بارسلونا • آبی",
       "jersey": "MESSI",
       "mono": "10",
       "accent": "#3b82f6",
-      "accent2": "#1e3a8a",
-      "source": "src/assets/avatar-renders/04-messi-barca-blue.webp"
+      "accent2": "#1e3a8a"
     },
     {
       "id": "messi_barca_purple",
       "no": 5,
-      "file": "05-messi-barca-purple.png",
+      "file": "05-messi-barca-purple.webp",
       "cat": "football",
       "name": "مسی",
       "tag": "بارسلونا • بنفش",
       "jersey": "MESSI",
       "mono": "10",
       "accent": "#a855f7",
-      "accent2": "#4c1d95",
-      "source": "src/assets/avatar-renders/05-messi-barca-purple.webp"
+      "accent2": "#4c1d95"
     },
     {
       "id": "ronaldinho_brazil",
       "no": 6,
-      "file": "06-ronaldinho-brazil.png",
+      "file": "06-ronaldinho-brazil.webp",
       "cat": "football",
       "name": "رونالدینیو",
       "tag": "برزیل • شماره ۱۰",
@@ -117,7 +109,7 @@
     {
       "id": "ronaldinho_milan",
       "no": 7,
-      "file": "07-ronaldinho-milan.png",
+      "file": "07-ronaldinho-milan.webp",
       "cat": "football",
       "name": "رونالدینیو",
       "tag": "میلان • شماره ۸۰",
@@ -133,7 +125,7 @@
     {
       "id": "neymar_brazil",
       "no": 8,
-      "file": "08-neymar-brazil.png",
+      "file": "08-neymar-brazil.webp",
       "cat": "football",
       "name": "نیمار",
       "tag": "برزیل • شماره ۱۰",
@@ -145,7 +137,7 @@
     {
       "id": "neymar_barca",
       "no": 9,
-      "file": "09-neymar-barca.png",
+      "file": "09-neymar-barca.webp",
       "cat": "football",
       "name": "نیمار",
       "tag": "بارسلونا • شماره ۱۱",
@@ -161,7 +153,7 @@
     {
       "id": "dybala_juve",
       "no": 10,
-      "file": "10-dybala-juve.png",
+      "file": "10-dybala-juve.webp",
       "cat": "football",
       "name": "دیبالا",
       "tag": "یوونتوس • شماره ۱۰",
@@ -177,7 +169,7 @@
     {
       "id": "ronaldo_red_alt",
       "no": 11,
-      "file": "11-ronaldo-red-alt.png",
+      "file": "11-ronaldo-red-alt.webp",
       "cat": "football",
       "name": "رونالدو",
       "tag": "قرمز درخشان • شماره ۷",
@@ -189,20 +181,19 @@
     {
       "id": "messi_argentina",
       "no": 12,
-      "file": "12-messi-argentina.png",
+      "file": "12-messi-argentina.webp",
       "cat": "football",
       "name": "مسی",
       "tag": "آرژانتین • شماره ۱۰",
       "jersey": "MESSI",
       "mono": "10",
       "accent": "#38bdf8",
-      "accent2": "#0c4a6e",
-      "source": "src/assets/avatar-renders/12-messi-argentina.webp"
+      "accent2": "#0c4a6e"
     },
     {
       "id": "mbappe_france",
       "no": 13,
-      "file": "13-mbappe-france.png",
+      "file": "13-mbappe-france.webp",
       "cat": "football",
       "name": "امباپه",
       "tag": "فرانسه • شماره ۱۰",
@@ -214,7 +205,7 @@
     {
       "id": "van_dijk_netherlands",
       "no": 14,
-      "file": "14-van-dijk-netherlands.png",
+      "file": "14-van-dijk-netherlands.webp",
       "cat": "football",
       "name": "فن‌دایک",
       "tag": "هلند • شماره ۴",
@@ -226,7 +217,7 @@
     {
       "id": "haaland_city",
       "no": 15,
-      "file": "15-haaland-city.png",
+      "file": "15-haaland-city.webp",
       "cat": "football",
       "name": "هالند",
       "tag": "سیتی • شماره ۹",
@@ -238,7 +229,7 @@
     {
       "id": "tarnished",
       "no": 16,
-      "file": "16-tarnished.png",
+      "file": "16-tarnished.webp",
       "cat": "elden",
       "name": "Tarnished",
       "tag": "جنگجوی اصلی",
@@ -250,7 +241,7 @@
     {
       "id": "malenia",
       "no": 17,
-      "file": "17-malenia.png",
+      "file": "17-malenia.webp",
       "cat": "elden",
       "name": "Malenia",
       "tag": "ملکه سرخ",
@@ -262,7 +253,7 @@
     {
       "id": "radahn",
       "no": 18,
-      "file": "18-radahn.png",
+      "file": "18-radahn.webp",
       "cat": "elden",
       "name": "Radahn",
       "tag": "Starscourge",
@@ -274,7 +265,7 @@
     {
       "id": "ranni",
       "no": 19,
-      "file": "19-ranni.png",
+      "file": "19-ranni.webp",
       "cat": "elden",
       "name": "Ranni",
       "tag": "جادوگر ماه",
@@ -286,7 +277,7 @@
     {
       "id": "melina",
       "no": 20,
-      "file": "20-melina.png",
+      "file": "20-melina.webp",
       "cat": "elden",
       "name": "Melina",
       "tag": "wanderer",
@@ -298,7 +289,7 @@
     {
       "id": "artorias",
       "no": 21,
-      "file": "21-artorias.png",
+      "file": "21-artorias.webp",
       "cat": "souls",
       "name": "Artorias",
       "tag": "شوالیه پرتگاه",
@@ -310,7 +301,7 @@
     {
       "id": "solaire",
       "no": 22,
-      "file": "22-solaire.png",
+      "file": "22-solaire.webp",
       "cat": "souls",
       "name": "Solaire",
       "tag": "شمس Astora",
@@ -322,7 +313,7 @@
     {
       "id": "ornstein",
       "no": 23,
-      "file": "23-ornstein.png",
+      "file": "23-ornstein.webp",
       "cat": "souls",
       "name": "Ornstein",
       "tag": "شکارچی اژدها",
@@ -334,7 +325,7 @@
     {
       "id": "black_knight",
       "no": 24,
-      "file": "24-black-knight.png",
+      "file": "24-black-knight.webp",
       "cat": "souls",
       "name": "Black Knight",
       "tag": "شوالیه سیاه",
@@ -346,7 +337,7 @@
     {
       "id": "nameless_king",
       "no": 25,
-      "file": "25-nameless-king.png",
+      "file": "25-nameless-king.webp",
       "cat": "souls",
       "name": "Nameless King",
       "tag": "پادشاه طوفان",
@@ -358,7 +349,7 @@
     {
       "id": "sekiro",
       "no": 26,
-      "file": "26-sekiro.png",
+      "file": "26-sekiro.webp",
       "cat": "bonus",
       "name": "Sekiro",
       "tag": "شینوبی تنها",
@@ -370,7 +361,7 @@
     {
       "id": "ghost_samurai",
       "no": 27,
-      "file": "27-ghost-of-tsushima.png",
+      "file": "27-ghost-of-tsushima.webp",
       "cat": "bonus",
       "name": "Ghost of Tsushima",
       "tag": "سامورایی",
@@ -382,7 +373,7 @@
     {
       "id": "kratos",
       "no": 28,
-      "file": "28-kratos.png",
+      "file": "28-kratos.webp",
       "cat": "bonus",
       "name": "Kratos",
       "tag": "خدای جنگ",
@@ -394,7 +385,7 @@
     {
       "id": "geralt",
       "no": 29,
-      "file": "29-geralt.png",
+      "file": "29-geralt.webp",
       "cat": "bonus",
       "name": "Geralt",
       "tag": "The Witcher",
@@ -406,7 +397,7 @@
     {
       "id": "doom_slayer",
       "no": 30,
-      "file": "30-doom-slayer.png",
+      "file": "30-doom-slayer.webp",
       "cat": "bonus",
       "name": "Doom Slayer",
       "tag": "شیطان‌کش",
@@ -415,5 +406,11 @@
       "accent": "#f43f5e",
       "accent2": "#14532d"
     }
-  ]
+  ],
+  "source": {
+    "folder": "image",
+    "publicPath": "/avatars",
+    "ext": ".webp",
+    "size": 512
+  }
 }

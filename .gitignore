@@ -1,11 +1,11 @@
 node_modules/
 dist/
-public/avatars/legends.webp
-public/avatars/hallocall.webp
+public/avatars/
 .sprite-work/
 .wrangler/
 .DS_Store
 avatar-src/
+.gen/
 _sheet*.png
 _row*.png
 _full.png

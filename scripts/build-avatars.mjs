@@ -1,22 +1,36 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { copyFile, mkdir, readFile, writeFile, readdir } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /**
- * Binary assets are committed as base64 so a plain `npm ci && build` works on CI
- * without image tooling. They are produced by `node scripts/compose-avatars.mjs`.
+ * Copies every profile portrait from the committed `image/` folder into
+ * `public/avatars/` so Vite/Workers Static Assets can serve them, and unpacks
+ * the app badge. `image/` is the single source of truth for all 30 profiles.
  */
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-const targets = [
-  { source: "src/assets/legends-avatars.b64", output: "public/avatars/legends.webp", label: "Legend avatar sprite (30 profiles)" },
-  { source: "src/assets/hallocall-avatar.b64", output: "public/avatars/hallocall.webp", label: "HalloCall app avatar + favicon" },
-];
+await mkdir(resolve(root, "public/avatars"), { recursive: true });
 
-for (const target of targets) {
-  const base64 = (await readFile(resolve(root, target.source), "utf8")).replace(/\s+/g, "");
-  const output = resolve(root, target.output);
-  await mkdir(dirname(output), { recursive: true });
-  await writeFile(output, Buffer.from(base64, "base64"));
-  console.log(`✓ ${target.label} → ${target.output}`);
+const catalog = JSON.parse(await readFile(resolve(root, "src/lib/avatars.catalog.json"), "utf8"));
+
+let copied = 0;
+for (const avatar of catalog.avatars) {
+  const from = resolve(root, catalog.source.folder, avatar.file);
+  if (!existsSync(from)) {
+    console.warn(`! missing profile image: ${from}`);
+    continue;
+  }
+  await copyFile(from, resolve(root, "public/avatars", avatar.file));
+  copied++;
+}
+console.log(`✓ ${copied}/${catalog.avatars.length} profile portraits → public/avatars/`);
+
+const base64 = (await readFile(resolve(root, "src/assets/hallocall-avatar.b64"), "utf8")).replace(/\s+/g, "");
+await writeFile(resolve(root, "public/avatars/hallocall.webp"), Buffer.from(base64, "base64"));
+console.log("✓ HalloCall app avatar → public/avatars/hallocall.webp");
+
+const missing = catalog.avatars.filter((a) => !existsSync(resolve(root, "public/avatars", a.file)));
+if (missing.length) {
+  console.warn(`! ${missing.length} profiles still missing artwork: ${missing.map((m) => m.file).join(", ")}`);
 }
