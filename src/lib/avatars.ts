@@ -3,7 +3,7 @@ import catalogJson from "./avatars.catalog.json";
 
 /**
  * The single source of truth for every profile avatar.
- * Each of the 30 profiles lives as its own WebP portrait inside the `image/`
+ * Every catalogued profile lives as its own WebP portrait inside the `image/`
  * folder at the repository root; `scripts/build-avatars.mjs` copies them to
  * `public/avatars/` so the UI serves them as individual files and the whole
  * collection stays together in one place on GitHub.

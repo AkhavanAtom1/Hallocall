@@ -7,7 +7,7 @@ import { Icon } from "./Icon";
 const catCount = (id: string) => AVATARS.filter((avatar) => avatar.category === id).length;
 
 /**
- * The rebuilt profile gallery: 30 hand-described avatars split into four
+ * The profile gallery is driven by the central image catalog and grouped into
  * collections. Used in the auth card (compact) and in the profile sheet (gallery).
  */
 export function AvatarPicker({
