@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { CSSProperties } from "react";
-import { AVATAR_CATEGORIES, AVATARS, avatarOf } from "../lib/avatars";
+import { AVATAR_CATEGORIES, AVATARS, avatarOf, faNum } from "../lib/avatars";
 import { AvatarImage } from "./AvatarImage";
 import { Icon } from "./Icon";
 
@@ -19,7 +19,11 @@ export function AvatarPicker({
 }) {
   const [category, setCategory] = useState("all");
   const [peek, setPeek] = useState<string | null>(null);
-  const list = category === "all" ? AVATARS : AVATARS.filter((avatar) => avatar.category === category);
+  const compact = variant === "compact";
+  const filtered = category === "all" ? AVATARS : AVATARS.filter((avatar) => avatar.category === category);
+  // The compact variant lives inside the auth card / modal: show the newest
+  // few per collection so the page never renders 40+ portraits at once.
+  const list = compact ? filtered.slice(0, 12) : filtered;
   const described = avatarOf(peek ?? value);
 
   return (
@@ -70,7 +74,7 @@ export function AvatarPicker({
           <b>{described.name}</b>
           <span>{described.tag}</span>
         </div>
-        <small>برای دیدن بقیه، روی کالکشن‌ها بزن</small>
+        <small>{compact ? `${faNum(AVATARS.length)} پروفایل در «گالری پروفایل‌ها»` : "برای دیدن بقیه، روی کالکشن‌ها بزن"}</small>
       </div>
     </div>
   );

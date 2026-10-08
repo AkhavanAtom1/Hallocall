@@ -57,7 +57,11 @@ function rgba(hex: string, alpha: number) {
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
 }
 
-const CATEGORY_EMOJI: Record<string, string> = { football: "⚽", elden: "🌿", souls: "⚔️", bonus: "🔥" };
+const CATEGORY_EMOJI: Record<string, string> = { football: "⚽", heroes: "🦸", elden: "🌿", souls: "⚔️", bonus: "🔥" };
+
+/** 30 → ۳۰ so counters in the UI always use Persian digits. */
+export const faNum = (value: number | string) =>
+  String(value).replace(/[0-9]/g, (digit) => "۰۱۲۳۴۵۶۷۸۹"[Number(digit)]);
 
 export const AVATARS: AvatarDefinition[] = catalog.avatars.map((entry) => ({
   id: entry.id as AvatarId,
@@ -98,9 +102,3 @@ export const DEFAULT_AVATAR = AVATARS[0].id;
 
 export const avatarOf = (id: string): AvatarDefinition =>
   ALL_AVATARS.find((a) => a.id === id) ?? AVATARS[0];
-
-/** CSS background style for a single portrait file (falls back to emoji + gradient). */
-export function spriteStyle(avatar: AvatarDefinition) {
-  if (!avatar.src) return undefined;
-  return { backgroundImage: `url(${avatar.src})`, backgroundSize: "cover", backgroundPosition: "center" } as const;
-}

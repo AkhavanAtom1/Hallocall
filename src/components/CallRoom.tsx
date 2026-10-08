@@ -9,7 +9,7 @@ import { AppAvatar } from "./AppAvatar";
 import { AvatarImage } from "./AvatarImage";
 import { GlowButton } from "./GlowButton";
 import { Icon } from "./Icon";
-import { Scene, spotlight } from "./Scene";
+import { Scene } from "./Scene";
 
 const QUICK_EMOJIS = ["😂", "❤️", "👍", "🔥", "🎉", "😮", "👏", "🙌", "💯", "✨", "🥳", "👀"];
 const QUALITY_PRESETS = [
@@ -649,7 +649,7 @@ export function CallPage({
             <AppAvatar size={38} className="brand-avatar" />
             <div><b>{call?.name ?? "Friend Call"}</b><span dir="ltr">#{code}</span></div>
           </div>
-          <button className="call-code-chip" onClick={shareCall} onMouseMove={spotlight} title="کپی یا اشتراک‌گذاری لینک کال">
+          <button className="call-code-chip" onClick={shareCall} title="کپی یا اشتراک‌گذاری لینک کال">
             <span>کد ورود</span><strong dir="ltr">{code}</strong><Icon name={shareNotice ? "check" : "copy"} size={15} />
           </button>
           {shareNotice && <span className="share-feedback" role="status">{shareNotice}</span>}
@@ -738,7 +738,7 @@ function ParticipantTile({ participant, self, hostId }: { participant: Participa
   return (
     <div className={self ? "participant-card self" : "participant-card"}>
       <div className={`avatar-stage ${state}`} style={{ "--accent": avatar.accent } as CSSProperties}>
-        <div className="avatar-face" style={{ background: avatar.gradient }}><AvatarImage avatar={avatar} /></div>
+        <div className="avatar-face" style={{ background: avatar.gradient }}><AvatarImage avatar={avatar} priority /></div>
         {participant.muted && <span className="mute-badge" title="میکروفون بی‌صداست"><Icon name="micOff" size={13} /></span>}
         {participant.speaking && !participant.muted && <span className="speaking-dot" aria-label="در حال صحبت" />}
       </div>
@@ -758,5 +758,5 @@ function ToolButton({
   disabled?: boolean;
   "aria-expanded"?: boolean;
 }) {
-  return <button type="button" onClick={onClick} disabled={disabled} aria-pressed={active} title={label} className={danger ? "tool danger" : "tool"} onMouseMove={spotlight} {...attributes}><span className={active ? "tool-circle active" : "tool-circle"}><Icon name={icon} /></span><small>{label}</small></button>;
+  return <button type="button" onClick={onClick} disabled={disabled} aria-pressed={active} title={label} className={danger ? "tool danger" : "tool"} {...attributes}><span className={active ? "tool-circle active" : "tool-circle"}><Icon name={icon} /></span><small>{label}</small></button>;
 }
