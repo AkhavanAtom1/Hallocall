@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 /**
  * Copies every profile portrait from the committed `image/` folder into
  * `public/avatars/` so Vite/Workers Static Assets can serve them, and unpacks
- * the app badge. `image/` is the single source of truth for all 30 profiles.
+ * the app badge. `image/` is the single source of truth for all catalogued profiles.
  */
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
