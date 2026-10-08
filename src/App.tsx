@@ -2,8 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties, FormEvent, ReactNode } from "react";
 import { api } from "./lib/api";
 import { AVATAR_CATEGORIES, AVATARS, DEFAULT_AVATAR, avatarOf } from "./lib/avatars";
-import { getIceServers, applyAudioQuality } from "./lib/webrtc";
-import type { CallInfo, Friend, FriendRequest, IncomingCall, Participant, User } from "./lib/types";
+import type { Friend, FriendRequest, IncomingCall, User } from "./lib/types";
 import { Icon } from "./components/Icon";
 import { AvatarImage } from "./components/AvatarImage";
 import { AvatarPicker } from "./components/AvatarPicker";
@@ -12,32 +11,18 @@ import { APP_AVATAR, APP_AVATAR_DEF } from "./lib/appIdentity";
 import { GlowButton } from "./components/GlowButton";
 import { Scene, spotlight } from "./components/Scene";
 import { CALL_CODE_LENGTH, MAX_CALL_PARTICIPANTS } from "./lib/call";
+import { CallPage } from "./components/CallRoom";
 
-const QUICK_EMOJIS = ["😂","❤️","👍","🔥","🎉","😮","👏","🙌","💯","✨","🥳","👀"];
 const SHOWCASE = ["ronaldo_red","messi_barca_blue","ronaldinho_brazil","haaland_city","malenia","kratos","solaire","geralt"];
-
-async function copyText(value: string) {
-  try {
-    if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(value); return true; }
-  } catch {}
-  try {
-    const input = document.createElement("textarea");
-    input.value = value;
-    input.style.position = "fixed";
-    input.style.opacity = "0";
-    document.body.appendChild(input);
-    input.focus();
-    input.select();
-    const ok = document.execCommand("copy");
-    input.remove();
-    return ok;
-  } catch { return false; }
-}
 
 type Route = { page:"login" } | { page:"dashboard" } | { page:"friends" } | { page:"profiles" } | { page:"calls" } | { page:"call"; code:string };
 
 function routeFromPath(path = location.pathname): Route {
-  if (path.startsWith("/call/")) return { page:"call", code:decodeURIComponent(path.slice(6)).toUpperCase() };
+  if (path.startsWith("/call/")) {
+    const segment = path.slice(6).split("/")[0];
+    try { return { page:"call", code:decodeURIComponent(segment).trim().toUpperCase() }; }
+    catch { return { page:"calls" }; }
+  }
   if (path === "/friends") return { page:"friends" };
   if (path === "/profiles") return { page:"profiles" };
   if (path === "/calls") return { page:"calls" };
@@ -56,14 +41,19 @@ export function App() {
   const { route, go } = useRoute();
   const [user,setUser] = useState<User|null>(null);
   const [booting,setBooting] = useState(true);
-  const [dark,setDark] = useState(()=>localStorage.getItem("hallocall-theme") !== "light");
+  const [dark,setDark] = useState(()=>{ try { return localStorage.getItem("hallocall-theme") !== "light"; } catch { return true; } });
   const [incoming,setIncoming] = useState<IncomingCall|null>(null);
+  const [incomingBusy,setIncomingBusy] = useState(false);
   const [profileOpen,setProfileOpen] = useState(false);
   const [toast,setToast] = useState<string|undefined>(undefined);
 
-  useEffect(()=>{ document.documentElement.classList.toggle("light",!dark); document.documentElement.classList.toggle("dark",dark); localStorage.setItem("hallocall-theme",dark?"dark":"light"); },[dark]);
-  useEffect(()=>{ api.me().then((d)=>setUser(d.user)).catch(()=>{}).finally(()=>setBooting(false)); },[]);
-  useEffect(()=>{ if(!booting && user && route.page==="login") go("/dashboard"); },[booting,user,route.page,go]);
+  useEffect(()=>{
+    document.documentElement.classList.toggle("light",!dark);
+    document.documentElement.classList.toggle("dark",dark);
+    try { localStorage.setItem("hallocall-theme",dark?"dark":"light"); } catch {}
+  },[dark]);
+  useEffect(()=>{ let active=true; api.me().then((d)=>{if(active)setUser(d.user)}).catch(()=>{}).finally(()=>{if(active)setBooting(false)}); return()=>{active=false}; },[]);
+  useEffect(()=>{ if(booting)return; if(user && route.page==="login")go("/dashboard"); else if(!user && route.page!=="login")go("/login"); },[booting,user,route.page,go]);
   useEffect(()=>{ if (!user) return; api.touch().catch(()=>{}); const id=setInterval(()=>api.touch().catch(()=>{}),10000); return()=>clearInterval(id); },[user]);
   useEffect(()=>{ if(!user || route.page==="call") return; let active=true; const poll=async()=>{ try { const d=await api.incoming(); if(active) setIncoming(d.calls[0]??null);} catch{} }; poll(); const id=setInterval(poll,2200); return()=>{active=false;clearInterval(id)}; },[user,route.page]);
   useEffect(()=>{ if(!toast) return; const id=setTimeout(()=>setToast(undefined),2500); return()=>clearTimeout(id); },[toast]);
@@ -71,13 +61,21 @@ export function App() {
   const logout=async()=>{ await api.logout().catch(()=>{}); setUser(null); go("/login"); };
   const signIn=(u:User)=>{ setUser(u); go("/dashboard"); };
   const applyAvatar=async(avatarId:string)=>{ try{ const d=await api.profile(avatarId); setUser(d.user); setToast(`پروفایل ${avatarOf(avatarId).name} ذخیره شد`); return true; } catch(e){ setToast(e instanceof Error?e.message:"ذخیره نشد"); return false; } };
-  const respondIncoming=async(action:"accept"|"decline")=>{ if(!incoming) return; try { const d=await api.respondCall(incoming.inviteId,action); const code=d.code; setIncoming(null); if(action==="accept" && code) go(`/call/${code}`); } catch(e){setToast(e instanceof Error?e.message:"خطا")}; };
+  const respondIncoming=async(action:"accept"|"decline")=>{
+    if(!incoming || incomingBusy)return;
+    setIncomingBusy(true);
+    try {
+      const d=await api.respondCall(incoming.inviteId,action);
+      setIncoming(null);
+      if(action==="accept" && d.code)go(`/call/${d.code}`);
+    } catch(e){setToast(e instanceof Error?e.message:"خطا")}
+    finally{setIncomingBusy(false)}
+  };
 
   if (booting) return <BootScreen dark={dark} />;
   const effectivePage = route.page === "login" && user ? "dashboard" : route.page;
-  if (route.page==="login" && !user) return <LoginPage onSuccess={signIn} dark={dark} setDark={setDark} />;
-  if (!user) { go("/login"); return null; }
-  if (route.page==="call") return <CallPage user={user} code={route.code} go={go} dark={dark} setDark={setDark} />;
+  if (!user) return <LoginPage onSuccess={signIn} dark={dark} setDark={setDark} />;
+  if (route.page==="call") return <CallPage key={route.code} user={user} code={route.code} go={go} dark={dark} setDark={setDark} />;
 
   return <>
     <AppShell user={user} route={route} go={go} dark={dark} setDark={setDark} logout={logout} openProfile={()=>setProfileOpen(true)}>
@@ -86,14 +84,14 @@ export function App() {
       {effectivePage==="profiles" && <Profiles user={user} onApply={applyAvatar}/>}
       {effectivePage==="calls" && <Calls go={go} onToast={setToast}/>}
     </AppShell>
-    {incoming && <IncomingOverlay call={incoming} onAccept={()=>respondIncoming("accept")} onDecline={()=>respondIncoming("decline")} />}
+    {incoming && <IncomingOverlay call={incoming} busy={incomingBusy} onAccept={()=>respondIncoming("accept")} onDecline={()=>respondIncoming("decline")} />}
     {profileOpen && <ProfileModal user={user} onClose={()=>setProfileOpen(false)} onApply={async(id)=>{ const ok=await applyAvatar(id); if(ok) setProfileOpen(false); return ok; }} />}
-    {toast && <div className="toast glass"><Icon name="check" size={14}/><span>{toast}</span></div>}
+    {toast && <div className="toast glass" role="status" aria-live="polite"><Icon name="check" size={14}/><span>{toast}</span></div>}
   </>;
 }
 
 function BootScreen({dark}:{dark:boolean}) {
-  return <div className="app-bg boot"><Scene/><div className="boot-core"><AppAvatar size={76} className="boot-avatar"/><div className="spinner"/><p>در حال آماده‌سازی HalloCall</p><small>{dark?"حالت تاریک":"حالت روشن"} • نورپردازی استادیوم روشن شد</small></div></div>;
+  return <div className="app-bg boot"><Scene/><div className="boot-core"><AppAvatar size={76} className="boot-avatar"/><div className="spinner"/><p>در حال آماده‌سازی HalloCall</p><small>{dark?"حالت تاریک":"حالت روشن"} • لطفاً کمی صبر کن</small></div></div>;
 }
 
 /* ─────────────────────────── auth ─────────────────────────── */
@@ -126,22 +124,16 @@ function LoginPage({onSuccess,dark,setDark}:{onSuccess:(u:User)=>void;dark:boole
         <Feature icon="call" title="One‑tap call" text="تماس مستقیم با یک کلیک"/>
         <Feature icon="signal" title="Adaptive audio" text="کنترل کیفیت برای اینترنت ضعیف"/>
       </div>
-      <div className="avatar-ticker" aria-hidden="true">
-        <div className="ticker-track">
-          {[...SHOWCASE,...SHOWCASE].map((id,i)=><span key={`${id}-${i}`} style={{"--accent":avatarOf(id).accent} as CSSProperties}><AvatarImage avatar={id}/></span>)}
-        </div>
-        <b>{AVATARS.length} پروفایل تازه • فوتبال و گیمینگ</b>
-      </div>
     </section>
 
     <section className="auth-card glass" onMouseMove={spotlight}>
       <div className="card-lamp" aria-hidden="true"/>
       <div className="auth-card-top"><div><p className="muted">خوش آمدی</p><h3>{mode==="login"?"وارد حساب شو":"حساب خودت را بساز"}</h3></div><div className="mini-status"><span/> آنلاین در هر دو حالت</div></div>
-      <div className="segmented"><button className={mode==="login"?"active":""} onClick={()=>setMode("login")}>ورود</button><button className={mode==="register"?"active":""} onClick={()=>setMode("register")}>ثبت‌نام</button></div>
+      <div className="segmented" role="group" aria-label="نوع ورود"><button type="button" className={mode==="login"?"active":""} aria-pressed={mode==="login"} onClick={()=>{setMode("login");setError("")}}>ورود</button><button type="button" className={mode==="register"?"active":""} aria-pressed={mode==="register"} onClick={()=>{setMode("register");setError("")}}>ثبت‌نام</button></div>
       {error&&<div className="error-box"><Icon name="info" size={17}/><span>{error}</span></div>}
       <form onSubmit={submit}>
-        <Field label="نام کاربری" value={username} onChange={setUsername} placeholder="مثلاً ali_23" dir="ltr"/>
-        <Field label="رمز عبور" type="password" value={password} onChange={setPassword} placeholder="حداقل ۶ کاراکتر" dir="ltr"/>
+        <Field label="نام کاربری" value={username} onChange={setUsername} placeholder="مثلاً ali_23" dir="ltr" maxLength={20} pattern="[A-Za-z0-9_]{3,20}" autoComplete="username"/>
+        <Field label="رمز عبور" type="password" value={password} onChange={setPassword} placeholder="حداقل ۶ کاراکتر" dir="ltr" minLength={mode==="register"?6:undefined} autoComplete={mode==="register"?"new-password":"current-password"}/>
         {mode==="register"&&<AvatarPicker value={avatar} onChange={setAvatar} variant="compact"/>}
         <GlowButton className="wide" type="submit" tone="primary" size="lg" disabled={busy} trailingIcon={busy?undefined:"arrow"} loading={busy?<span className="tiny-spinner"/>:undefined}>{busy?"در حال ورود...":mode==="login"?"ورود به HalloCall":"ساخت حساب و ورود"}</GlowButton>
       </form>
@@ -150,7 +142,7 @@ function LoginPage({onSuccess,dark,setDark}:{onSuccess:(u:User)=>void;dark:boole
   </main>;
 }
 
-function Field({label,type="text",value,onChange,placeholder,dir}:{label:string;type?:string;value:string;onChange:(s:string)=>void;placeholder:string;dir?:string}){return <label className="field"><span>{label}</span><input dir={dir} type={type} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} required /></label>}
+function Field({label,type="text",value,onChange,placeholder,dir,minLength,maxLength,pattern,autoComplete}:{label:string;type?:string;value:string;onChange:(s:string)=>void;placeholder:string;dir?:string;minLength?:number;maxLength?:number;pattern?:string;autoComplete?:string}){return <label className="field"><span>{label}</span><input dir={dir} type={type} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} minLength={minLength} maxLength={maxLength} pattern={pattern} autoComplete={autoComplete} required /></label>}
 function Feature({icon,title,text}:{icon:string;title:string;text:string}){return <div className="feature glass"><div className="feature-icon"><Icon name={icon}/></div><div><b>{title}</b><span>{text}</span></div></div>}
 
 /* ─────────────────────────── shell ─────────────────────────── */
@@ -166,6 +158,7 @@ function AppShell({user,route,go,dark,setDark,logout,openProfile,children}:{user
         <NavItem icon="users" label="فرندها" active={route.page==="friends"} onClick={()=>go("/friends")}/>
         <NavItem icon="mask" label="پروفایل‌ها" active={route.page==="profiles"} onClick={()=>go("/profiles")}/>
         <NavItem icon="call" label="کال‌ها" active={route.page==="calls"} onClick={()=>go("/calls")}/>
+        <button className="mobile-theme-toggle" onClick={()=>setDark(!dark)} title="تغییر تم" aria-label="تغییر تم"><Icon name={dark?"sun":"moon"}/></button>
       </nav>
       <div className="sidebar-spacer"/>
       <button className="profile-chip" onClick={openProfile} onMouseMove={spotlight}>
@@ -184,18 +177,18 @@ function AppShell({user,route,go,dark,setDark,logout,openProfile,children}:{user
 }
 
 function NavItem({icon,label,active,onClick}:{icon:string;label:string;active:boolean;onClick:()=>void}){
-  return <button onClick={onClick} className={active?"nav-item active":"nav-item"}><span className="nav-icon"><Icon name={icon}/></span><span>{label}</span>{active&&<i/>}</button>;
+  return <button onClick={onClick} aria-current={active?"page":undefined} className={active?"nav-item active":"nav-item"}><span className="nav-icon"><Icon name={icon}/></span><span>{label}</span>{active&&<i/>}</button>;
 }
 
 function PageTop({eyebrow,title,desc,action}:{eyebrow:string;title:string;desc:string;action?:ReactNode}){
-  return <header className="page-top"><div><span className="eyebrow"><i/>{eyebrow}</span><h1>{title}</h1><p>{desc}</p></div><div className="top-actions">{action}<div className="live-pill"><span/> سرویس آنلاین <small>•</small> WebRTC ready</div></div></header>;
+  return <header className="page-top"><div><span className="eyebrow"><i/>{eyebrow}</span><h1>{title}</h1><p>{desc}</p></div><div className="top-actions">{action}<div className="live-pill"><Icon name="signal" size={14}/> پنل کاربری <small>•</small> HalloCall</div></div></header>;
 }
 
 /* ─────────────────────────── home ─────────────────────────── */
 
 function Dashboard({user,go,onToast}:{user:User;go:(s:string)=>void;onToast:(s:string)=>void}){
   const [friends,setFriends]=useState<Friend[]>([]);
-  useEffect(()=>{api.friends().then(d=>setFriends(d.friends)).catch(()=>{});},[]);
+  useEffect(()=>{let active=true;const load=()=>api.friends().then(d=>{if(active)setFriends(d.friends)}).catch(()=>{});load();const id=setInterval(load,9000);return()=>{active=false;clearInterval(id)};},[]);
   const online=friends.filter(f=>f.online);
   const quickCall=async(friend:Friend)=>{try{const d=await api.invite(friend.id);onToast(`درخواست تماس برای ${friend.username} ارسال شد`);go(`/call/${d.call.code}`);}catch(e){onToast(e instanceof Error?e.message:"خطا")}};
 
@@ -220,15 +213,13 @@ function Dashboard({user,go,onToast}:{user:User;go:(s:string)=>void;onToast:(s:s
       <div className="stat-card glass" onMouseMove={spotlight}>
         <div className="stat-icon green"><Icon name="users"/></div>
         <div><span>فرندهای آنلاین</span><b>{online.length}</b></div>
-        <div className="spark-bars" aria-hidden="true">{[38,62,44,78,52,88,66].map((h,i)=><i key={i} style={{height:`${h}%`,animationDelay:`${i*.12}s`} as CSSProperties}/>)}</div>
-        <button onClick={()=>go("/friends")}>مشاهده <Icon name="arrow" size={15}/></button>
+        <button onClick={()=>go("/friends")}>مشاهدهٔ فرندها <Icon name="arrow" size={15}/></button>
       </div>
 
       <div className="stat-card glass" onMouseMove={spotlight}>
         <div className="stat-icon purple"><Icon name="signal"/></div>
-        <div><span>کیفیت هوشمند</span><b>12–96 kbps</b></div>
-        <div className="spark-bars" aria-hidden="true">{[54,32,72,46,88,60,40].map((h,i)=><i key={i} style={{height:`${h}%`,animationDelay:`${i*.12}s`} as CSSProperties}/>)}</div>
-        <button onClick={()=>go("/calls")}>تنظیمات <Icon name="arrow" size={15}/></button>
+        <div><span>بازهٔ کیفیت صدا</span><b>۱۲–۹۶ kbps</b></div>
+        <button onClick={()=>go("/calls")}>رفتن به کال‌ها <Icon name="arrow" size={15}/></button>
       </div>
     </section>
 
@@ -279,9 +270,19 @@ function Friends({user,go,onToast}:{user:User;go:(s:string)=>void;onToast:(s:str
   const [q,setQ]=useState("");
   const [results,setResults]=useState<User[]>([]);
   const timer=useRef<number | undefined>(undefined);
+  const searchVersion=useRef(0);
   const load=useCallback(()=>api.friends().then(d=>{setFriends(d.friends);setRequests(d.requests)}).catch(()=>{}),[]);
   useEffect(()=>{load();const id=setInterval(load,9000);return()=>clearInterval(id)},[load]);
-  const search=(value:string)=>{setQ(value);window.clearTimeout(timer.current);timer.current=window.setTimeout(()=>{if(value.trim().length>=2)api.searchUsers(value.trim()).then(d=>setResults(d.users)).catch(()=>setResults([]));else setResults([])},260)};
+  useEffect(()=>()=>{window.clearTimeout(timer.current);searchVersion.current++},[]);
+  const search=(value:string)=>{
+    setQ(value);
+    window.clearTimeout(timer.current);
+    const version=++searchVersion.current;
+    if(value.trim().length<2){setResults([]);return}
+    timer.current=window.setTimeout(()=>{
+      api.searchUsers(value.trim()).then(d=>{if(searchVersion.current===version)setResults(d.users)}).catch(()=>{if(searchVersion.current===version)setResults([])});
+    },260);
+  };
   const relationFor=(id:string)=>{if(friends.some(f=>f.id===id))return "friend" as const;const request=requests.find(r=>r.id===id);return request?.direction==="incoming"?"incoming":request?"outgoing":"none" as const};
   const add=async(id:string)=>{try{await api.friendRequest(id);onToast("درخواست دوستی ارسال شد");setResults([]);setQ("");load()}catch(e){onToast(e instanceof Error?e.message:"خطا")}};
   const respond=async(id:string,action:"accept"|"decline")=>{try{await api.friendRespond(id,action);onToast(action==="accept"?"فرند جدید اضافه شد":"درخواست رد شد");load()}catch(e){onToast(e instanceof Error?e.message:"خطا")}};
@@ -293,8 +294,8 @@ function Friends({user,go,onToast}:{user:User;go:(s:string)=>void;onToast:(s:str
     <PageTop eyebrow="FRIENDS" title="فرندهای من" desc="یوزرنیم پیدا کن، درخواست بفرست، قبول کن و با یک کلیک وارد تماس شو."/>
     <section className="friends-layout">
       <div className="friends-main">
-        <div className="panel-head glass"><div><h3>جست‌وجوی سریع</h3><p>نام کاربری دوستت را بنویس؛ درخواست از همین‌جا مدیریت می‌شود.</p></div><div className="search-wrap"><Icon name="search" size={18}/><input value={q} onChange={e=>search(e.target.value)} placeholder="search username..." dir="ltr"/></div></div>
-        {results.length>0&&<div className="search-results glass">{results.map(r=>{const a=avatarOf(r.avatar);const relation=relationFor(r.id);const label=relation==="friend"?"فرند شما":relation==="incoming"?"پاسخ بده":relation==="outgoing"?"در انتظار":"+ افزودن";return <div className="result-row" key={r.id}><div className="result-avatar" style={{background:a.gradient}}><AvatarImage avatar={a}/></div><div><b>{r.username}</b><span>{relation==="incoming"?"برای شما درخواست فرستاده است":"عضو HalloCall"}</span></div><button onClick={()=>relation==="none"?add(r.id):undefined} disabled={relation!=="none"} className={relation==="none"?"secondary-btn":"secondary-btn is-disabled"}>{label}</button></div>})}</div>}
+        <div className="panel-head glass"><div><h3>جست‌وجوی سریع</h3><p>نام کاربری دوستت را بنویس؛ درخواست از همین‌جا مدیریت می‌شود.</p></div><div className="search-wrap"><Icon name="search" size={18}/><input value={q} onChange={e=>search(e.target.value)} placeholder="search username..." dir="ltr" aria-label="جست‌وجوی نام کاربری" autoComplete="off"/></div></div>
+        {results.length>0&&<div className="search-results glass" role="list" aria-label="نتایج جست‌وجو">{results.map(r=>{const a=avatarOf(r.avatar);const relation=relationFor(r.id);const label=relation==="friend"?"فرند شما":relation==="outgoing"?"در انتظار":"+ افزودن";const request=requests.find(item=>item.id===r.id);return <div className="result-row" key={r.id} role="listitem"><div className="result-avatar" style={{background:a.gradient}}><AvatarImage avatar={a}/></div><div className="result-user"><b>{r.username}</b><span>{relation==="incoming"?"برای شما درخواست فرستاده است":"عضو HalloCall"}</span></div>{relation==="incoming"&&request?<div className="result-actions"><button onClick={()=>respond(request.friendshipId,"accept")} className="secondary-btn accept-request">قبول</button><button onClick={()=>respond(request.friendshipId,"decline")} className="secondary-btn decline-request">رد</button></div>:<button onClick={()=>relation==="none"?add(r.id):undefined} disabled={relation!=="none"} className={relation==="none"?"secondary-btn":"secondary-btn is-disabled"}>{label}</button>}</div>})}</div>}
         <div className="section-head compact"><div><h3>فرندها <span className="count">{friends.length}</span></h3><p>{friends.filter(f=>f.online).length} نفر آنلاین</p></div></div>
         <div className="friends-list">
           {friends.map(f=><FriendRow key={f.id} friend={f} onCall={()=>call(f)} onRemove={()=>removeFriend(f)} />)}
@@ -307,7 +308,7 @@ function Friends({user,go,onToast}:{user:User;go:(s:string)=>void;onToast:(s:str
           <div className="tiny-avatar" style={{background:avatarOf(r.avatar).gradient}}><AvatarImage avatar={avatarOf(r.avatar)}/></div>
           <div className="request-copy"><b>{r.username}</b><span>{r.direction==="incoming"?"درخواست دوستی برای شما":"در انتظار پاسخ او"}</span></div>
           {r.direction==="incoming"
-            ?<div className="request-actions"><button onClick={()=>respond(r.friendshipId,"accept")} className="round-green" title="قبول درخواست"><Icon name="check" size={16}/></button><button onClick={()=>respond(r.friendshipId,"decline")} className="round-red" title="رد درخواست"><Icon name="x" size={16}/></button></div>
+            ?<div className="request-actions"><button onClick={()=>respond(r.friendshipId,"accept")} className="round-green" title="قبول درخواست" aria-label={`قبول درخواست ${r.username}`}><Icon name="check" size={16}/></button><button onClick={()=>respond(r.friendshipId,"decline")} className="round-red" title="رد درخواست" aria-label={`رد درخواست ${r.username}`}><Icon name="x" size={16}/></button></div>
             :<button onClick={()=>cancelRequest(r.friendshipId)} className="pending-chip pending-button">لغو</button>}
         </div>)}
         {!requests.length&&<div className="empty-mini">درخواستی برای نمایش وجود ندارد.</div>}
@@ -352,7 +353,7 @@ function Profiles({user,onApply}:{user:User;onApply:(id:string)=>Promise<boolean
       return <section className="cat-section" key={cat.id}>
         <div className="section-head"><div><span className="eyebrow"><i/>{cat.en}</span><h3>{cat.icon} {cat.fa}</h3><p>{cat.hint}</p></div><div className="count-pill">{items.length} پروفایل</div></div>
         <div className="avatar-showcase">
-          {items.map(a=>{const active=a.id===pending;return <button type="button" key={a.id} className={active?"showcase-card on":"showcase-card"} onClick={()=>setPending(a.id)} style={{"--accent":a.accent,"--accent-glow":a.glow,"--accent-soft":a.ring} as CSSProperties}>
+          {items.map(a=>{const active=a.id===pending;return <button type="button" key={a.id} className={active?"showcase-card on":"showcase-card"} aria-pressed={active} onClick={()=>setPending(a.id)} style={{"--accent":a.accent,"--accent-glow":a.glow,"--accent-soft":a.ring} as CSSProperties}>
             <span className="showcase-face"><AvatarImage avatar={a}/></span>
             <span className="showcase-meta"><b>{a.name}</b><small>{a.tag}</small></span>
             {a.id===user.avatar&&<span className="showcase-flag">فعلی</span>}
@@ -377,11 +378,31 @@ function Profiles({user,onApply}:{user:User;onApply:(id:string)=>Promise<boolean
 function ProfileModal({user,onClose,onApply}:{user:User;onClose:()=>void;onApply:(id:string)=>Promise<boolean>}){
   const [avatar,setAvatar]=useState<string>(user.avatar);
   const [saving,setSaving]=useState(false);
+  const dialogRef=useRef<HTMLDivElement>(null);
+  const closeRef=useRef(onClose);
+  closeRef.current=onClose;
   const chosen=avatarOf(avatar);
-  const save=async()=>{setSaving(true);await onApply(avatar);setSaving(false)};
+  useEffect(()=>{
+    const previous=document.activeElement as HTMLElement|null;
+    const previousOverflow=document.body.style.overflow;
+    document.body.style.overflow="hidden";
+    dialogRef.current?.focus();
+    const onKeyDown=(event:KeyboardEvent)=>{
+      if(event.key==="Escape"){event.preventDefault();closeRef.current();return}
+      if(event.key!=="Tab"||!dialogRef.current)return;
+      const focusable=Array.from(dialogRef.current.querySelectorAll<HTMLElement>('button:not([disabled]),input:not([disabled]),[tabindex]:not([tabindex="-1"])'));
+      if(!focusable.length)return;
+      const first=focusable[0],last=focusable[focusable.length-1];
+      if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus()}
+      else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus()}
+    };
+    document.addEventListener("keydown",onKeyDown);
+    return()=>{document.removeEventListener("keydown",onKeyDown);document.body.style.overflow=previousOverflow;previous?.focus()};
+  },[]);
+  const save=async()=>{setSaving(true);try{await onApply(avatar)}finally{setSaving(false)}};
   return <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}>
-    <div className="profile-modal glass">
-      <div className="modal-head"><div><span className="eyebrow"><i/> PROFILE</span><h3>{user.username}</h3></div><button className="icon-btn" onClick={onClose} aria-label="بستن"><Icon name="x"/></button></div>
+    <div ref={dialogRef} className="profile-modal glass" role="dialog" aria-modal="true" aria-labelledby="profile-dialog-title" tabIndex={-1}>
+      <div className="modal-head"><div><span className="eyebrow"><i/> PROFILE</span><h3 id="profile-dialog-title">{user.username}</h3></div><button className="icon-btn" onClick={onClose} aria-label="بستن"><Icon name="x"/></button></div>
       <div className="profile-preview">
         <div className="big-avatar" style={{"--accent":chosen.accent, background:chosen.gradient, boxShadow:`0 0 0 1px ${chosen.ring}, 0 0 45px ${chosen.glow}`} as CSSProperties}><AvatarImage avatar={chosen}/></div>
         <div><b>{chosen.name} • {chosen.tag}</b><span>در کال، وقتی حرف بزنی هاله سبز می‌گیرد.</span></div>
@@ -399,7 +420,15 @@ function Calls({go,onToast}:{go:(s:string)=>void;onToast:(s:string)=>void}){
   const [code,setCode]=useState("");
   const [busy,setBusy]=useState(false);
   const create=async()=>{setBusy(true);try{const d=await api.createCall(name);onToast("کال ساخته شد؛ شما به‌عنوان میزبان وارد شدید.");go(`/call/${d.call.code}`)}catch(e){onToast(e instanceof Error?e.message:"خطا در ساخت کال")}finally{setBusy(false)}};
-  const join=async(e:FormEvent)=>{e.preventDefault();const normalized=code.trim().toUpperCase();if(!normalized)return;try{const d=await api.getCall(normalized);if(d.call.status==="ended")throw new Error("این کال تمام شده است.");go(`/call/${d.call.code}`)}catch(e){onToast(e instanceof Error?e.message:"کال پیدا نشد")}};
+  const join=async(e:FormEvent)=>{
+    e.preventDefault();
+    const normalized=code.trim().toUpperCase();
+    if(normalized.length!==CALL_CODE_LENGTH){onToast(`کد کال باید ${CALL_CODE_LENGTH} کاراکتر باشد.`);return}
+    setBusy(true);
+    try{const d=await api.getCall(normalized);if(d.call.status==="ended")throw new Error("این کال تمام شده است.");go(`/call/${d.call.code}`)}
+    catch(e){onToast(e instanceof Error?e.message:"کال پیدا نشد")}
+    finally{setBusy(false)}
+  };
 
   return <div className="page">
     <PageTop eyebrow="CALLS" title="کال صوتی" desc={`کال بساز، کد را بالای صفحه ببین و تا ${MAX_CALL_PARTICIPANTS} نفر را دور هم جمع کن.`}/>
@@ -415,7 +444,7 @@ function Calls({go,onToast}:{go:(s:string)=>void;onToast:(s:string)=>void}){
           <span className="eyebrow"><i/> PRIVATE ROOM</span>
           <h2>کال شخصی خودت را بساز.</h2>
           <p>با زدن این دکمه، کال ساخته می‌شود و خودت همان لحظه به‌عنوان میزبان وارد اتاق می‌شوی. بعد کد یا لینک بالای صفحه را برای دوستانت بفرست.</p>
-          <label className="field"><span>نام کال <small>اختیاری</small></span><input value={name} onChange={e=>setName(e.target.value)} dir="rtl" maxLength={64}/></label>
+          <label className="field"><span>نام کال <small>اختیاری · حداکثر ۶۴ کاراکتر</small></span><input value={name} onChange={e=>setName(e.target.value.slice(0,64))} dir="rtl" maxLength={64} aria-label="نام کال"/></label>
           <GlowButton tone="primary" size="lg" className="wide" icon="plus" disabled={busy} loading={busy?<span className="tiny-spinner"/>:undefined} onClick={create}>{busy?"در حال ورود به کال...":"ساخت و ورود به کال"}</GlowButton>
           <div className="call-flow-note"><span className="flow-step active"><b>۱</b> ساخت</span><i/><span className="flow-step active"><b>۲</b> ورود خودکار</span><i/><span className="flow-step"><b>۳</b> دعوت دوستان</span></div>
         </div>
@@ -426,7 +455,7 @@ function Calls({go,onToast}:{go:(s:string)=>void;onToast:(s:string)=>void}){
         <span className="eyebrow"><i/> JOIN A CALL</span>
         <h2>کد را وارد کن.</h2>
         <p>اگر دوستت کد یک کال را فرستاده، اینجا واردش کن. بعد از ورود، کد همیشه بالای صفحه در دسترس است.</p>
-        <form onSubmit={join}><input value={code} onChange={e=>setCode(e.target.value.toUpperCase())} placeholder="مثلاً 7J9K2WP" dir="ltr" maxLength={CALL_CODE_LENGTH} aria-label="کد کال"/><GlowButton className="wide" tone="cyan" trailingIcon="arrow">ورود به کال</GlowButton></form>
+        <form onSubmit={join}><input value={code} onChange={e=>setCode(e.target.value.toUpperCase().replace(/[^A-HJ-NP-Z2-9]/g,"").slice(0,CALL_CODE_LENGTH))} placeholder="مثلاً 7J9K2WP" dir="ltr" maxLength={CALL_CODE_LENGTH} minLength={CALL_CODE_LENGTH} pattern="[A-HJ-NP-Z2-9]{7}" autoComplete="off" aria-label="کد کال" required/><GlowButton className="wide" tone="cyan" trailingIcon={busy?undefined:"arrow"} disabled={busy||code.length!==CALL_CODE_LENGTH} loading={busy?<span className="tiny-spinner"/>:undefined}>{busy?"در حال بررسی…":"ورود به کال"}</GlowButton></form>
         <div className="tip"><Icon name="info" size={16}/><span>برای اینترنت ضعیف، داخل تماس می‌توانی کیفیت صدا را پایین بیاوری.</span></div>
       </div>
     </section>
@@ -439,70 +468,38 @@ function Calls({go,onToast}:{go:(s:string)=>void;onToast:(s:string)=>void}){
   </div>;
 }
 
-function IncomingOverlay({call,onAccept,onDecline}:{call:IncomingCall;onAccept:()=>void;onDecline:()=>void}){
+function IncomingOverlay({call,busy,onAccept,onDecline}:{call:IncomingCall;busy:boolean;onAccept:()=>void;onDecline:()=>void}){
   const a=avatarOf(call.caller.avatar);
+  const dialogRef=useRef<HTMLDivElement>(null);
+  const declineRef=useRef(onDecline);
+  declineRef.current=onDecline;
+  useEffect(()=>{
+    const previous=document.activeElement as HTMLElement|null;
+    dialogRef.current?.focus();
+    const onKeyDown=(event:KeyboardEvent)=>{
+      if(event.key==="Escape"){event.preventDefault();declineRef.current();return}
+      if(event.key!=="Tab"||!dialogRef.current)return;
+      const focusable=Array.from(dialogRef.current.querySelectorAll<HTMLElement>('button:not([disabled])'));
+      if(!focusable.length)return;
+      const first=focusable[0],last=focusable[focusable.length-1];
+      if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus()}
+      else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus()}
+    };
+    document.addEventListener("keydown",onKeyDown);
+    return()=>{document.removeEventListener("keydown",onKeyDown);previous?.focus()};
+  },[]);
   return <div className="incoming-backdrop">
-    <div className="incoming-card glass">
-      <div className="incoming-top"><span>INCOMING CALL</span><div className="ring-dot"><i/><i/><i/></div></div>
+    <div ref={dialogRef} className="incoming-card glass" role="dialog" aria-modal="true" aria-label={`تماس ورودی از ${call.caller.username}`} tabIndex={-1}>
+      <div className="incoming-top"><span>تماس ورودی</span><div className="ring-dot" aria-hidden="true"><i/><i/><i/></div></div>
       <div className="incoming-avatar" style={{"--accent":a.accent, background:a.gradient, boxShadow:`0 0 0 8px var(--panel), 0 0 60px ${a.glow}`} as CSSProperties}><AvatarImage avatar={a}/></div>
       <h3>{call.caller.username}</h3>
       <p>{call.name}</p>
       <div className="incoming-actions">
-        <GlowButton tone="rose" size="lg" className="round-big pulse-soft" icon="phoneOff" onClick={onDecline} aria-label="رد تماس"/>
-        <GlowButton tone="mint" size="lg" className="round-big pulse" icon="call" onClick={onAccept} aria-label="پاسخ دادن"/>
+        <GlowButton tone="rose" size="lg" className="round-big" icon="phoneOff" onClick={onDecline} disabled={busy} aria-label="رد تماس"/>
+        <GlowButton tone="mint" size="lg" className="round-big" icon="call" onClick={onAccept} disabled={busy} aria-label="پاسخ دادن"/>
       </div>
     </div>
   </div>;
 }
-
-/* ─────────────────────────── call room ─────────────────────────── */
-
-function CallPage({user,code,go,dark,setDark}:{user:User;code:string;go:(s:string)=>void;dark:boolean;setDark:(v:boolean)=>void}){
-  const [call,setCall]=useState<CallInfo|null>(null); const [error,setError]=useState(""); const [joined,setJoined]=useState(false); const [shareNotice,setShareNotice]=useState(""); const [chatOpen,setChatOpen]=useState(false); const [emojiOpen,setEmojiOpen]=useState(false); const [qualityOpen,setQualityOpen]=useState(false); const [quality,setQuality]=useState(70); const [messages,setMessages]=useState<Array<{id:string;userId:string;username:string;avatar:string;text:string;createdAt:number}>>([]); const [draft,setDraft]=useState(""); const [participants,setParticipants]=useState<Participant[]>([]); const [reactions,setReactions]=useState<Array<{id:string;emoji:string;x:number}>>([]); const [connection,setConnection]=useState<"connecting"|"connected"|"reconnecting">("connecting");
-  const wsRef=useRef<WebSocket|null>(null); const participantsRef=useRef<Participant[]>([]); const pcs=useRef(new Map<string,RTCPeerConnection>()); const creatingPeers=useRef(new Set<string>()); const streams=useRef(new Map<string,MediaStream>()); const local=useRef<MediaStream|null>(null); const audioEls=useRef(new Map<string,HTMLAudioElement>()); const offerStarted=useRef(new Set<string>()); const candidates=useRef(new Map<string,RTCIceCandidateInit[]>()); const analyserCleanup=useRef<Array<()=>void>>([]); const callCodeRef=useRef(code);
-  useEffect(()=>{callCodeRef.current=code},[code]);
-  const showShareNotice=(message:string)=>{setShareNotice(message);window.setTimeout(()=>setShareNotice(""),2600)};
-  const shareCall=async()=>{const link=`${location.origin}/call/${code}`;try{if(navigator.share){await navigator.share({title:call?.name??"HalloCall",text:"ورود به کال صوتی HalloCall",url:link});showShareNotice("لینک ارسال شد");return}}catch(e){if(e instanceof DOMException && e.name==="AbortError")return}const copied=await copyText(link);showShareNotice(copied?"لینک کپی شد":`کد ورود: ${code}`)};
-  useEffect(()=>{ let cancelled=false; (async()=>{try{const d=await api.getCall(code);if(cancelled)return;setCall(d.call); await api.join(code); setJoined(true);}catch(e){setError(e instanceof Error?e.message:"ورود به کال ممکن نشد.")}})(); return()=>{cancelled=true}; },[code]);
-  const send=(payload:unknown)=>{const ws=wsRef.current;if(ws?.readyState===WebSocket.OPEN)ws.send(JSON.stringify(payload));};
-  const closePeer=(id:string)=>{creatingPeers.current.delete(id);pcs.current.get(id)?.close(); pcs.current.delete(id); streams.current.delete(id); const a=audioEls.current.get(id); a?.remove(); audioEls.current.delete(id); offerStarted.current.delete(id); candidates.current.delete(id);};
-  const syncParticipants=useCallback((list:Participant[])=>{participantsRef.current=list;setParticipants(list); for(const id of Array.from(pcs.current.keys())) if(!list.some(p=>p.id===id)) closePeer(id); },[]);
-  const makePeer=useCallback(async(p:Participant)=>{if(pcs.current.has(p.id)||creatingPeers.current.has(p.id))return pcs.current.get(p.id)??null; creatingPeers.current.add(p.id); try{const ice=await getIceServers(); if(!participantsRef.current.some(x=>x.id===p.id))return null; const pc=new RTCPeerConnection({iceServers:ice}); pcs.current.set(p.id,pc); local.current?.getTracks().forEach(t=>pc.addTrack(t,local.current!)); pc.onicecandidate=e=>{if(e.candidate)send({type:"signal",to:p.id,payload:{kind:"ice",candidate:e.candidate.toJSON()}})}; pc.ontrack=e=>{const stream=e.streams[0]; if(!stream)return;streams.current.set(p.id,stream);let audio=audioEls.current.get(p.id);if(!audio){audio=new Audio();audio.autoplay=true;audioEls.current.set(p.id,audio)}audio.srcObject=stream; void audio.play().catch(()=>{}); setupAnalyser(stream,p.id,false)};pc.onconnectionstatechange=()=>{const s=pc.connectionState;if(s==="connected")setConnection("connected");else if(s==="failed"||s==="disconnected")setConnection("reconnecting")}; return pc;} catch {return null;} finally {creatingPeers.current.delete(p.id)}},[]);const maybeOffer=useCallback(async(p:Participant)=>{if(user.id>=p.id||offerStarted.current.has(p.id))return; const pc=pcs.current.get(p.id);if(!pc)return; offerStarted.current.add(p.id); try{await pc.setLocalDescription(await pc.createOffer());send({type:"signal",to:p.id,payload:{kind:"offer",sdp:pc.localDescription}})}catch{offerStarted.current.delete(p.id)}},[user.id]);
-  const setupAnalyser=(stream:MediaStream,id:string,localStream=false)=>{try{const Ctx=window.AudioContext||((window as any).webkitAudioContext as typeof AudioContext);if(!Ctx)return;const ctx=new Ctx();const source=ctx.createMediaStreamSource(stream);const analyser=ctx.createAnalyser();analyser.fftSize=256;analyser.smoothingTimeConstant=.72;source.connect(analyser);const data=new Uint8Array(analyser.frequencyBinCount);let raf=0;const tick=()=>{analyser.getByteFrequencyData(data);let sum=0;for(const v of data)sum+=v;const avg=sum/data.length;if(localStream){setParticipants(ps=>ps.map(p=>p.id===user.id?{...p,speaking:avg>15&&!local.current?.getAudioTracks().some(t=>!t.enabled)}:p))}else setParticipants(ps=>ps.map(p=>p.id===id?{...p,speaking:avg>13&&!p.muted}:p));raf=requestAnimationFrame(tick)};tick();analyserCleanup.current.push(()=>{cancelAnimationFrame(raf);ctx.close().catch(()=>{})})}catch{}};
-  useEffect(()=>{if(!joined)return;let active=true;const poll=async()=>{try{const d=await api.getCall(code);if(active)setCall(d.call)}catch(e){const msg=e instanceof Error?e.message:"";if(active && /دیگر فعال|فعال نیست|پیدا نشد/.test(msg))setError("این تماس به پایان رسیده یا دیگر در دسترس نیست.")}};poll();const pollId=setInterval(poll,3500);return()=>{active=false;clearInterval(pollId)};},[joined,code]);
-  useEffect(()=>{if(!joined)return;let dead=false; (async()=>{try{const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true,channelCount:1},video:false});if(dead){stream.getTracks().forEach(t=>t.stop());return;}local.current=stream;setParticipants(ps=>{if(ps.some(p=>p.id===user.id))return ps;const next=ps.concat({id:user.id,username:user.username,avatar:user.avatar,muted:false,speaking:false});participantsRef.current=next;return next;});setupAnalyser(stream,user.id,true); const scheme=location.protocol==="https:"?"wss":"ws"; const ws=new WebSocket(`${scheme}://${location.host}/ws/call/${encodeURIComponent(code)}`); wsRef.current=ws; ws.onopen=()=>{setConnection("connected");send({type:"hello"})}; ws.onclose=()=>setConnection("reconnecting"); ws.onerror=()=>setConnection("reconnecting"); ws.onmessage=async(ev)=>{try{const m=JSON.parse(ev.data);if(m.type==="ready"||m.type==="presence"){syncParticipants((m.participants||[]).map((p:any)=>({...p,speaking:false})));if(m.messages)setMessages(m.messages); setTimeout(()=>{for(const p of (m.participants||[]))if(p.id!==user.id)void makePeer(p).then(()=>maybeOffer(p))},30)}else if(m.type==="signal"){const from=m.from as string;let p=participantsRef.current.find(x=>x.id===from);if(!p)p={id:from,username:"Friend",avatar:DEFAULT_AVATAR,muted:false,speaking:false};const peer=pcs.current.get(from)??await makePeer(p);if(!peer)return;const data=m.payload;if(data?.kind==="offer"){await peer.setRemoteDescription(data.sdp);for(const c of candidates.current.get(from)||[])await peer.addIceCandidate(c).catch(()=>{});candidates.current.delete(from);if(peer.signalingState==="have-remote-offer"){await peer.setLocalDescription(await peer.createAnswer());send({type:"signal",to:from,payload:{kind:"answer",sdp:peer.localDescription}})}}else if(data?.kind==="answer"){await peer.setRemoteDescription(data.sdp);for(const c of candidates.current.get(from)||[])await peer.addIceCandidate(c).catch(()=>{});candidates.current.delete(from)}else if(data?.kind==="ice"){if(!peer.remoteDescription){const arr=candidates.current.get(from)||[];arr.push(data.candidate);candidates.current.set(from,arr)}else{try{await peer.addIceCandidate(new RTCIceCandidate(data.candidate))}catch{}}} }else if(m.type==="ended"){setError("میزبان این کال را تمام کرد.");ws.close()}else if(m.type==="chat"){setMessages(ms=>ms.some(x=>x.id===m.message.id)?ms:ms.concat(m.message).slice(-100))}else if(m.type==="reaction"){const reactionId=crypto.randomUUID();setReactions(rs=>rs.concat({id:reactionId,emoji:m.emoji,x:35+Math.random()*30}).slice(-18));setTimeout(()=>setReactions(rs=>rs.filter(r=>r.id!==reactionId)),2200)}}catch{}};
-        }catch{setError("دسترسی به میکروفون ممکن نشد. اجازهٔ Microphone را در مرورگر فعال کن.")}})(); return()=>{dead=true; wsRef.current?.close();local.current?.getTracks().forEach(t=>t.stop());for(const id of Array.from(pcs.current.keys()))closePeer(id);analyserCleanup.current.splice(0).forEach(fn=>fn());};},[joined,code,user.id,user.username,user.avatar]);
-  useEffect(()=>{participants.filter(p=>p.id!==user.id).forEach(p=>{void makePeer(p).then(()=>maybeOffer(p))})},[participants,makePeer,maybeOffer]);
-  const toggleMute=()=>{const track=local.current?.getAudioTracks()[0];if(!track)return;track.enabled=!track.enabled;const muted=!track.enabled;setParticipants(ps=>{const next=ps.map(p=>p.id===user.id?{...p,muted,speaking:false}:p);participantsRef.current=next;return next;});send({type:"mute",muted})};
-  const changeQuality=async(v:number)=>{setQuality(v);for(const pc of pcs.current.values())await applyAudioQuality(pc,v)};
-  const leave=async()=>{await api.leave(code).catch(()=>{});local.current?.getTracks().forEach(t=>t.stop());wsRef.current?.close();go("/calls")};
-  const sendChat=()=>{if(!draft.trim())return;send({type:"chat",text:draft});setDraft("")};
-  const react=(emoji:string)=>{send({type:"reaction",emoji});};
-  const my=participants.find(p=>p.id===user.id); const maxParticipants=call?.maxParticipants??MAX_CALL_PARTICIPANTS; const qualityLabel=quality<34?"مصرف کم • مناسب اینترنت ضعیف":quality<72?"بالانس • کیفیت خوب":"کیفیت بالا • مصرف بیشتر";
-  if(error)return <main className="app-bg call-error"><Scene/><div className="error-card glass"><AppAvatar size={54}/><h2>ورود به کال ممکن نشد</h2><p>{error}</p><GlowButton tone="primary" icon="arrow" onClick={()=>go("/calls")}>بازگشت به کال‌ها</GlowButton></div></main>;
-  return <main className="app-bg call-page"><Scene variant="call"/><header className="call-header"><div className="call-header-left"><div className="call-brand"><AppAvatar size={38} className="brand-avatar"/><div><b>{call?.name??"Friend Call"}</b><span dir="ltr">#{code}</span></div></div><button className="call-code-chip" onClick={shareCall} onMouseMove={spotlight} title="کپی یا اشتراک‌گذاری لینک کال"><span>کد ورود</span><strong dir="ltr">{code}</strong><Icon name={shareNotice?"check":"copy"} size={15}/></button>{shareNotice&&<span className="share-feedback">{shareNotice}</span>}</div><div className="call-center-status"><span className={connection==="connected"?"live-dot":"live-dot warn"}/>{connection==="connected"?"متصل":"در حال اتصال دوباره…"}<small>•</small><span>{participants.length} / {maxParticipants} نفر</span></div><div className="call-head-actions"><button className="icon-btn" onClick={()=>setDark(!dark)} aria-label="تغییر تم"><Icon name={dark?"sun":"moon"}/></button><button className="leave-top" onClick={leave}><Icon name="phoneOff" size={16}/> خروج</button></div></header>
-    <section className="call-stage"><div className={`participant-stage count-${Math.min(participants.length,MAX_CALL_PARTICIPANTS)}`}>{participants.map(p=><ParticipantTile key={p.id} participant={p} self={p.id===user.id} hostId={call?.hostId}/>)}</div>{reactions.map(r=><span key={r.id} className="reaction-float" style={{left:`${r.x}%`}}>{r.emoji}</span>)}{!participants.length&&<div className="joining"><span className="spinner"/><p>در حال ورود به کال…</p></div>}{participants.length<maxParticipants&&participants.length>0&&<div className="waiting-pill glass"><span className="waiting-dot"/> ظرفیت تماس {maxParticipants-participants.length} نفر دیگر دارد — کد بالا را برای دوستانت بفرست.</div>}{participants.length>=maxParticipants&&<div className="waiting-pill glass"><span className="waiting-dot"/> این تماس به حداکثر ظرفیت {maxParticipants} نفر رسیده است.</div>}</section>
-    <div className="call-toolbar-wrap"><div className="call-toolbar glass">
-      {qualityOpen&&<div className="popover quality-pop"><div className="popover-head"><div><b>🎚 کنترل کیفیت صدا</b><span>{qualityLabel}</span></div><span className="quality-number">{quality}</span></div><input type="range" min="0" max="100" value={quality} onChange={e=>changeQuality(Number(e.target.value))}/><div className="range-labels"><span>ضعیف</span><span>تعادل</span><span>شفاف</span></div></div>}
-      {emojiOpen&&<div className="popover emoji-pop">{QUICK_EMOJIS.map(e=><button key={e} onClick={()=>{react(e);setEmojiOpen(false)}}>{e}</button>)}</div>}
-      <ToolButton label={my?.muted?"باز کردن میکروفون":"میوت کردن"} danger={!!my?.muted} active={!my?.muted} onClick={toggleMute} icon={my?.muted?"micOff":"mic"}/><ToolButton label="ایموجی" active={emojiOpen} onClick={()=>{setEmojiOpen(!emojiOpen);setQualityOpen(false)}} icon="smile"/><ToolButton label="چت" active={chatOpen} onClick={()=>{setChatOpen(!chatOpen);setEmojiOpen(false)}} icon="message"/><ToolButton label="کیفیت صدا" active={qualityOpen} onClick={()=>{setQualityOpen(!qualityOpen);setEmojiOpen(false)}} icon="signal"/><div className="toolbar-divider"/><button className="leave-btn" onClick={leave} title="خروج از تماس"><Icon name="phoneOff"/></button>
-    </div></div>
-    {chatOpen&&<aside className="chat-drawer glass"><div className="chat-head"><div><b>گفت‌وگو</b><span>پیام‌های همین کال</span></div><button className="icon-btn" onClick={()=>setChatOpen(false)}><Icon name="x"/></button></div><div className="chat-list">{messages.map(m=><div key={m.id} className={m.userId===user.id?"chat-msg mine":"chat-msg"}><div className="chat-avatar" style={{background:avatarOf(m.avatar).gradient}}><AvatarImage avatar={m.avatar}/></div><div><span>{m.userId===user.id?"شما":m.username}</span><p>{m.text}</p></div></div>)}{!messages.length&&<div className="chat-empty"><Icon name="message" size={28}/><p>هنوز پیامی نیست.</p></div>}</div><div className="chat-compose"><input value={draft} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")sendChat()}} placeholder="پیامت را بنویس…"/><button onClick={sendChat} aria-label="ارسال"><Icon name="arrow" size={16}/></button></div></aside>}
-  </main>;
-}
-
-function ParticipantTile({participant,self,hostId}:{participant:Participant;self:boolean;hostId?:string}){
-  const a=avatarOf(participant.avatar);const state=participant.muted?"muted":participant.speaking?"speaking":"idle";
-  return <div className={self?"participant-card self":"participant-card"}>
-    <div className={`avatar-stage ${state}`} style={{"--accent":a.accent} as CSSProperties}>
-      <div className="avatar-face" style={{background:a.gradient}}><AvatarImage avatar={a}/></div>
-      {participant.muted&&<span className="mute-badge"><Icon name="micOff" size={13}/></span>}
-      {participant.speaking&&!participant.muted&&<span className="speaking-dot"/>}
-    </div>
-    <div className="participant-name"><b>{participant.username}</b>{self&&<span>شما</span>}{participant.id===hostId&&<span className="host-badge">میزبان</span>}{participant.muted&&<em>میوت</em>}</div>
-  </div>;
-}
-
-function ToolButton({label,icon,onClick,active,danger}:{label:string;icon:string;onClick:()=>void;active?:boolean;danger?:boolean}){return <button onClick={onClick} className={danger?"tool danger":"tool"} onMouseMove={spotlight}><span className={active?"tool-circle active":"tool-circle"}><Icon name={icon}/></span><small>{label}</small></button>}
 
 export default App;
