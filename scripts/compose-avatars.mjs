@@ -1,9 +1,9 @@
 /**
  * Dev-only tool: rebuild the avatar sprite sheet from the source renders.
  *
- * Reads `src/lib/avatars.catalog.json`, looks for a matching 1:1 render in
- * `avatar-src/` for every entry and falls back to a generated "kit badge"
- * tile when a render is not there yet, so the sprite is always a full grid.
+ * Reads `src/lib/avatars.catalog.json`, prefers an explicit, committed `source`
+ * path when an entry has one, otherwise looks for a matching render in
+ * `avatar-src/`, and falls back to a generated "kit badge" tile when needed.
  *
  * Entries that carry a `print` block get their shirt name/number composited by
  * this script (the image service refuses to render some player surnames), so the
@@ -107,7 +107,7 @@ function printLayer(out, entry) {
 const tiles = [];
 const pending = [];
 catalog.avatars.forEach((entry, index) => {
-  const source = join(rendersDir, entry.file);
+  const source = entry.source ? resolve(root, entry.source) : join(rendersDir, entry.file);
   const out = join(workDir, `tile-${String(index).padStart(2, "0")}.png`);
   if (existsSync(source)) {
     run([source, "-resize", `${work}x${work}^`, "-gravity", "center", "-extent", `${work}x${work}`, out]);

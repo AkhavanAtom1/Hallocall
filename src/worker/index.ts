@@ -209,9 +209,9 @@ function safeUser(row: { id: string; username: string; avatar: string }): SafeUs
 
 export class CallRoom {
   private state: DurableObjectState;
-  private sockets = new Map<WebSocket, { id:string; username:string; avatar:string; muted:boolean }>();
   private messages: Array<{ id:string; userId:string; username:string; avatar:string; text:string; createdAt:number }> = [];
   private loaded = false;
+  private loading: Promise<void> | null = null;
 
   constructor(state: DurableObjectState) {
     this.state = state;
@@ -219,26 +219,43 @@ export class CallRoom {
 
   private async ensureLoaded() {
     if (this.loaded) return;
-    this.loaded = true;
-    const saved = await this.state.storage.get<typeof this.messages>("messages");
-    if (saved) this.messages = saved.slice(-100);
+    this.loading ??= (async () => {
+      const saved = await this.state.storage.get<typeof this.messages>("messages");
+      if (saved) this.messages = saved.slice(-100);
+      this.loaded = true;
+    })();
+    await this.loading;
+  }
+
+  /** Accepted WebSockets are the source of truth: in-memory maps disappear when
+   * the Durable Object hibernates, while serialized attachments survive. */
+  private connectedSockets() {
+    return this.state.getWebSockets().flatMap((socket) => {
+      try {
+        const peer = socket.deserializeAttachment() as { id:string; username:string; avatar:string; muted:boolean } | null;
+        if (!peer || socket.readyState !== WebSocket.OPEN) return [];
+        return [[socket, peer] as const];
+      } catch {
+        return [];
+      }
+    });
   }
 
   private snapshot() {
-    return Array.from(this.sockets.values()).map((p) => ({
-      id:p.id,
-      username:p.username,
-      avatar:p.avatar,
-      muted:p.muted,
+    return this.connectedSockets().map(([, peer]) => ({
+      id:peer.id,
+      username:peer.username,
+      avatar:peer.avatar,
+      muted:peer.muted,
     }));
   }
 
   private broadcast(payload: unknown, except?: WebSocket) {
     const text = JSON.stringify(payload);
-    for (const ws of this.sockets.keys()) {
-      if (ws === except) continue;
+    for (const [socket] of this.connectedSockets()) {
+      if (socket === except) continue;
       try {
-        ws.send(text);
+        socket.send(text);
       } catch {}
     }
   }
@@ -253,14 +270,13 @@ export class CallRoom {
       const avatar = request.headers.get("x-avatar") || "ronaldo_red";
       if (!id || !username) return new Response("Unauthorized", { status:401 });
 
-      for (const [socket, peer] of this.sockets) {
+      for (const [socket, peer] of this.connectedSockets()) {
         if (peer.id === id) {
           try { socket.close(1000, "Reconnected"); } catch {}
-          this.sockets.delete(socket);
         }
       }
 
-      if (this.sockets.size >= MAX_CALL_PARTICIPANTS) {
+      if (this.connectedSockets().length >= MAX_CALL_PARTICIPANTS) {
         return new Response(`این کال به حداکثر ظرفیت ${MAX_CALL_PARTICIPANTS} نفر رسیده است.`, { status:409 });
       }
 
@@ -270,7 +286,6 @@ export class CallRoom {
       this.state.acceptWebSocket(server);
 
       const session = { id, username, avatar, muted:false };
-      this.sockets.set(server, session);
       server.serializeAttachment(session);
 
       server.send(JSON.stringify({
@@ -289,14 +304,10 @@ export class CallRoom {
     }
 
     if (url.pathname.endsWith("/end")) {
-      const hostId = request.headers.get("x-user-id");
-      for (const [socket, peer] of this.sockets) {
-        if (peer.id !== hostId) {
-          try { socket.send(JSON.stringify({ type:"ended" })); } catch {}
-          try { socket.close(1000, "Call ended"); } catch {}
-        }
+      for (const [socket] of this.connectedSockets()) {
+        try { socket.send(JSON.stringify({ type:"ended" })); } catch {}
+        try { socket.close(1000, "Call ended"); } catch {}
       }
-      this.sockets.clear();
       return json({ ok:true });
     }
 
@@ -304,8 +315,13 @@ export class CallRoom {
   }
 
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
+    await this.ensureLoaded();
     const raw = typeof message === "string" ? message : decoder.decode(message);
-    const session = this.sockets.get(ws) ?? ws.deserializeAttachment() as { id:string; username:string; avatar:string; muted:boolean } | null;
+    if (raw.length > 64_000) {
+      try { ws.close(1009, "Message too large"); } catch {}
+      return;
+    }
+    const session = ws.deserializeAttachment() as { id:string; username:string; avatar:string; muted:boolean } | null;
     if (!session) return;
 
     try {
@@ -319,7 +335,7 @@ export class CallRoom {
       };
 
       if (msg.type === "signal" && msg.to) {
-        for (const [socket, peer] of this.sockets) {
+        for (const [socket, peer] of this.connectedSockets()) {
           if (peer.id === msg.to) {
             try {
               socket.send(JSON.stringify({ type:"signal", from:session.id, payload:msg.payload }));
@@ -331,7 +347,6 @@ export class CallRoom {
 
       if (msg.type === "mute") {
         session.muted = !!msg.muted;
-        this.sockets.set(ws, session);
         ws.serializeAttachment(session);
         this.broadcast({ type:"presence", participants:this.snapshot() });
         return;
@@ -374,14 +389,13 @@ export class CallRoom {
   }
 
   async webSocketClose(ws: WebSocket) {
-    const session = this.sockets.get(ws);
-    this.sockets.delete(ws);
+    const session = ws.deserializeAttachment() as { id:string; username:string; avatar:string; muted:boolean } | null;
     if (session) this.broadcast({ type:"presence", participants:this.snapshot() });
   }
 
   async webSocketError(ws: WebSocket) {
-    this.sockets.delete(ws);
-    this.broadcast({ type:"presence", participants:this.snapshot() });
+    const session = ws.deserializeAttachment() as { id:string; username:string; avatar:string; muted:boolean } | null;
+    if (session) this.broadcast({ type:"presence", participants:this.snapshot() });
   }
 }
 

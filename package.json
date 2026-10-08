@@ -22,9 +22,12 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261006.1",
-    "typescript": "^5.9.3",
-    "wrangler": "^4.55.0",
     "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0"
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.9.3",
+    "wrangler": "^4.55.0"
+  },
+  "overrides": {
+    "sharp": "0.35.5"
   }
 }

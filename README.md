@@ -7,11 +7,11 @@
 - ثبت‌نام و ورود با Username + Password
 - هش امن رمز عبور با PBKDF2/SHA-256 در Worker Runtime
 - انتخاب آواتار هنگام ثبت‌نام و یک صفحه کامل «پروفایل‌ها» برای تغییر آن
-- ۳۰ آواتار تصویری در ۴ کالکشن: ۱۵ افسانه فوتبال، ۵ شخصیت Elden Ring، ۵ شوالیه Dark Souls و ۵ آیکون بازی
-- همه آواتارها در یک sprite تک‌فایل ۶×۵ (webp) با حلقه نئونی، rim-light و هاله رنگی هر پروفایل
+- ۳۰ آواتار در ۴ کالکشن: فوتبال، Elden Ring، Dark Souls و آیکون‌های بازی
+- نمایش همهٔ پروفایل‌ها از یک sprite تک‌فایل ۶×۵ (webp)؛ سه پرترهٔ اختصاصی مسی با لباس‌های بارسلونا و آرژانتین بازسازی و جایگزین شده‌اند
 - فیلتر کالکشن (chip) روی گالری آواتار، پیش‌نمایش زنده و ذخیره آنی روی پروفایل
-- سیستم دکمه‌ای GlowButton: سایه لایه‌ای، spotlight دنبال‌کننده ماوس، shine sweep و هاله کف دکمه
-- پس‌زمینه چندلایه: aurora متحرک، پرتوهای نوری استادیوم، گرید، جرقه، film grain و vignette
+- سیستم دکمه‌ای GlowButton با سایه و spotlight ملایم، همراه با حالت‌های focus قابل‌دیدن برای صفحه‌کلید
+- پس‌زمینهٔ کم‌حرکت و سبک؛ انیمیشن‌های تزئینی دائمی صفحهٔ خانه حذف شده‌اند و `prefers-reduced-motion` رعایت می‌شود
 - جست‌وجوی کاربران با Username
 - Friend Request / Accept / Decline / Remove
 - Presence آنلاین/آفلاین
@@ -26,11 +26,11 @@
 - نمایش هاله سبز هنگام صحبت کردن
 - هاله قرمز هنگام mute
 - دکمه‌های دایره‌ای برای میکروفون، چت، ایموجی، کیفیت صدا و خروج
-- کنترل کیفیت صدا از 12 تا 96 kbps با `RTCRtpSender.setParameters()`
+- کنترل کیفیت صدای خروجی از 12 تا 96 kbps؛ سه preset و slider، با اعمال روی senderهای فعلی و اتصال‌های جدید
 - آماده برای Cloudflare TURN؛ در نبود TURN از STUN fallback استفاده می‌شود
 - Dark Mode / Light Mode
 - Responsive برای موبایل و دسکتاپ
-- CSS glow / glass / ambient orbs / rim-light / hover-lift / pulse / shimmer motion بدون نیاز به UI library
+- رابط responsive با glass و glow کنترل‌شده، پشتیبانی واقعی‌تر از تم روشن/تاریک و کاهش موشن در دستگاه‌های لمسی
 - مدیریت بهتر دعوت تماس: جلوگیری از زنگ‌زدن تکراری، انقضای دعوت‌های قدیمی و پایان درست تماس ردشده
 - بررسی ظرفیت ۲۰ نفره قبل از ورود و نمایش بهتر وضعیت پایان تماس
 - چیدمان واکنش‌گرا برای اتاق‌های شلوغ تا ۲۰ شرکت‌کننده
@@ -54,13 +54,16 @@
 ```text
 hallocall/
 ├─ src/
-│  ├─ App.tsx                 # UI اصلی + صفحات + Call UI
+│  ├─ App.tsx                 # صفحات اصلی و جریان کاربری
 │  ├─ main.tsx
 │  ├─ styles.css              # تم پایه
-│  ├─ premium.css             # لایه نورپردازی، موشن و کامپوننت‌های بصری
+│  ├─ premium.css             # لایهٔ بصری اصلی
+│  ├─ refinement.css           # اصلاح responsive، accessibility و کاهش موشن
+│  ├─ assets/avatar-renders/   # سه تصویر بهینه‌شدهٔ مسی (آرژانتین و بارسلونا)
 │  ├─ assets/legends-avatars.b64  # sprite آواتارها (base64، خروجی compose-avatars)
+│  ├─ components/CallRoom.tsx # اتاق تماس، WebRTC، چت و تنظیم بیت‌ریت
 │  ├─ components/Icon.tsx
-│  ├─ components/Scene.tsx    # پس‌زمینه چندلایه + helper نور spotlight
+│  ├─ components/Scene.tsx    # پس‌زمینهٔ ثابت و helper spotlight
 │  ├─ components/GlowButton.tsx
 │  ├─ components/AvatarPicker.tsx
 │  ├─ components/AvatarImage.tsx
@@ -82,6 +85,12 @@ hallocall/
 ```bash
 npm install
 npm run dev
+```
+
+برای typecheck و build کامل:
+
+```bash
+npm run verify
 ```
 
 برای اجرای نسخه‌ای که واقعاً توسط Wrangler سرو می‌شود:
@@ -165,11 +174,7 @@ npx wrangler secret put TURN_API_TOKEN
 
 ## نکته مهم درباره کیفیت صدا
 
-Slider داخل Call یک عدد 0 تا 100 دارد و bitrate سمت sender را تغییر می‌دهد:
-
-- پایین: مناسب اینترنت ضعیف و مصرف کمتر
-- وسط: تعادل کیفیت/مصرف
-- بالا: صدای شفاف‌تر و مصرف بیشتر
+کنترل Call سقف بیت‌ریت صدای خروجی را از 12 تا 96 kbps تغییر می‌دهد و مقدار واقعی را با kbps نشان می‌دهد. سه preset کم، متعادل و شفاف هم دارد. مرورگر و شرایط شبکه می‌توانند بیت‌ریت نهایی را پایین‌تر نگه دارند.
 
 در مرورگرهایی که محدودیت روی `RTCRtpSender.setParameters()` دارند، برنامه بدون خراب کردن تماس ادامه می‌دهد.
 

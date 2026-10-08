@@ -10,6 +10,7 @@ type CatalogAvatar = {
   id: string;
   no: number;
   file: string;
+  source?: string;
   cat: string;
   name: string;
   tag: string;

@@ -29,13 +29,13 @@ export function AvatarPicker({
           <span>آواتار پروفایل</span>
           <small>{AVATARS.length} پروفایل آماده • {AVATAR_CATEGORIES.length} کالکشن</small>
         </div>
-        <div className="chip-row" role="tablist" aria-label="دسته‌بندی آواتارها">
-          <button type="button" role="tab" aria-selected={category === "all"} className={category === "all" ? "cat-chip on" : "cat-chip"} onClick={() => setCategory("all")}>
+        <div className="chip-row" role="group" aria-label="فیلتر دسته‌بندی آواتارها">
+          <button type="button" aria-pressed={category === "all"} className={category === "all" ? "cat-chip on" : "cat-chip"} onClick={() => setCategory("all")}>
             ✨ همه <b>{AVATARS.length}</b>
           </button>
           {AVATAR_CATEGORIES.map((cat) => (
             <button
-              key={cat.id} type="button" role="tab" aria-selected={category === cat.id}
+              key={cat.id} type="button" aria-pressed={category === cat.id}
               className={category === cat.id ? "cat-chip on" : "cat-chip"} onClick={() => setCategory(cat.id)}
               title={cat.hint}
             >

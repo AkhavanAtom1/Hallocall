@@ -11,7 +11,7 @@
       "icon": "⚽",
       "fa": "افسانه‌های فوتبال",
       "en": "FOOTBALL LEGENDS",
-      "hint": "۱۵ پروفایل از پشتِ پیراهن، با شماره و نام روی پیراهن"
+      "hint": "۱۵ پروفایل فوتبالی؛ شماره و رنگ پیراهن، همراه با سه پرترهٔ بازسازی‌شدهٔ مسی"
     },
     {
       "id": "elden",
@@ -32,7 +32,7 @@
       "icon": "🔥",
       "fa": "افسانه‌های بازی",
       "en": "GAME ICONS",
-      "hint": "پنجاه‌تای special از بهترین بازی‌های نسل"
+      "hint": "پنج شخصیت ویژه از بازی‌های محبوب"
     }
   ],
   "avatars": [
@@ -87,21 +87,7 @@
       "mono": "10",
       "accent": "#3b82f6",
       "accent2": "#1e3a8a",
-      "kit": [
-        "#123c8b",
-        "#a50044"
-      ],
-      "print": {
-        "name": "MESSI",
-        "number": "10",
-        "nameY": 0.555,
-        "numberY": 0.76,
-        "nameSize": 0.056,
-        "numberSize": 0.25,
-        "color": "#ffd400",
-        "shadow": "rgba(8,10,34,.55)",
-        "opacity": 1.0
-      }
+      "source": "src/assets/avatar-renders/04-messi-barca-blue.webp"
     },
     {
       "id": "messi_barca_purple",
@@ -114,21 +100,7 @@
       "mono": "10",
       "accent": "#a855f7",
       "accent2": "#4c1d95",
-      "kit": [
-        "#1b2f6e",
-        "#8b1e3f"
-      ],
-      "print": {
-        "name": "MESSI",
-        "number": "10",
-        "nameY": 0.575,
-        "numberY": 0.78,
-        "nameSize": 0.056,
-        "numberSize": 0.25,
-        "color": "#ffd400",
-        "shadow": "rgba(8,8,26,.6)",
-        "opacity": 1.0
-      }
+      "source": "src/assets/avatar-renders/05-messi-barca-purple.webp"
     },
     {
       "id": "ronaldinho_brazil",
@@ -225,21 +197,7 @@
       "mono": "10",
       "accent": "#38bdf8",
       "accent2": "#0c4a6e",
-      "kit": [
-        "#6fa8dc",
-        "#f2f8fd"
-      ],
-      "print": {
-        "name": "MESSI",
-        "number": "10",
-        "nameY": 0.565,
-        "numberY": 0.77,
-        "nameSize": 0.055,
-        "numberSize": 0.245,
-        "color": "#0b2a5b",
-        "shadow": "rgba(255,255,255,.35)",
-        "opacity": 1.0
-      }
+      "source": "src/assets/avatar-renders/12-messi-argentina.webp"
     },
     {
       "id": "mbappe_france",
