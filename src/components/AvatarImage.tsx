@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { avatarOf } from "../lib/avatars";
 import type { AvatarDefinition } from "../lib/avatars";
 
@@ -5,7 +6,7 @@ import type { AvatarDefinition } from "../lib/avatars";
  * One circular profile portrait.
  *
  * Rendered as a real <img> (not a CSS background) so the browser can lazy-load
- * the gallery: with 40+ portraits the list view stays light even on a phone.
+ * the gallery: with 45 portraits the list view stays light even on a phone.
  * Falls back to the emoji + gradient badge for retired legacy avatars.
  */
 export function AvatarImage({
@@ -17,7 +18,8 @@ export function AvatarImage({
   priority?: boolean;
 }) {
   const def = typeof avatar === "string" ? avatarOf(avatar) : avatar;
-  if (!def.src) return <span className={`avatar-emoji ${className}`} aria-hidden="true">{def.emoji}</span>;
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  if (!def.src || failedSrc === def.src) return <span className={`avatar-emoji ${className}`} aria-hidden="true">{def.emoji}</span>;
   return (
     <span className={`avatar-photo ${className}`} role="img" aria-label={def.label}>
       <img
@@ -28,6 +30,7 @@ export function AvatarImage({
         loading={priority ? "eager" : "lazy"}
         decoding="async"
         draggable={false}
+        onError={() => setFailedSrc(def.src ?? null)}
       />
     </span>
   );

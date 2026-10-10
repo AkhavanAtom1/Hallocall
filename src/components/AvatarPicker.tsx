@@ -21,9 +21,13 @@ export function AvatarPicker({
   const [peek, setPeek] = useState<string | null>(null);
   const compact = variant === "compact";
   const filtered = category === "all" ? AVATARS : AVATARS.filter((avatar) => avatar.category === category);
-  // The compact variant lives inside the auth card / modal: show the newest
-  // few per collection so the page never renders 40+ portraits at once.
-  const list = compact ? filtered.slice(0, 12) : filtered;
+  // Compact lives inside the auth card: a few portraits from every collection
+  // so the page never renders 40+ files and heroes/elden/souls stay visible.
+  const list = !compact
+    ? filtered
+    : category === "all"
+      ? AVATAR_CATEGORIES.flatMap((cat) => AVATARS.filter((avatar) => avatar.category === cat.id).slice(0, 2))
+      : filtered.slice(0, 12);
   const described = avatarOf(peek ?? value);
 
   return (
@@ -37,15 +41,19 @@ export function AvatarPicker({
           <button type="button" aria-pressed={category === "all"} className={category === "all" ? "cat-chip on" : "cat-chip"} onClick={() => setCategory("all")}>
             ✨ همه <b>{AVATARS.length}</b>
           </button>
-          {AVATAR_CATEGORIES.map((cat) => (
-            <button
-              key={cat.id} type="button" aria-pressed={category === cat.id}
-              className={category === cat.id ? "cat-chip on" : "cat-chip"} onClick={() => setCategory(cat.id)}
-              title={cat.hint}
-            >
-              <span>{cat.icon}</span> {cat.fa} <b>{catCount(cat.id)}</b>
-            </button>
-          ))}
+          {AVATAR_CATEGORIES.map((cat) => {
+            const count = catCount(cat.id);
+            if (!count) return null;
+            return (
+              <button
+                key={cat.id} type="button" aria-pressed={category === cat.id}
+                className={category === cat.id ? "cat-chip on" : "cat-chip"} onClick={() => setCategory(cat.id)}
+                title={cat.hint}
+              >
+                <span>{cat.icon}</span> {cat.fa} <b>{count}</b>
+              </button>
+            );
+          })}
         </div>
       </div>
 

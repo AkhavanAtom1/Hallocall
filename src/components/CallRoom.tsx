@@ -384,6 +384,12 @@ export function CallPage({
         if (message.type === "ready" && mutedRef.current) send({ type: "mute", muted: true });
         for (const participant of list) {
           if (participant.id === user.id) continue;
+          if (message.type === "ready") {
+            const existing = pcs.current.get(participant.id);
+            if (existing && (existing.connectionState === "failed" || existing.connectionState === "closed")) {
+              closePeer(participant.id);
+            }
+          }
           void makePeer(participant).then((peer) => peer && maybeOffer(participant));
         }
         return;
@@ -396,6 +402,8 @@ export function CallPage({
           participant = { id: from, username: "Friend", avatar: DEFAULT_AVATAR, muted: false, speaking: false };
           syncParticipants([...participantsRef.current, participant]);
         }
+        const stale = pcs.current.get(from);
+        if (stale && (stale.connectionState === "failed" || stale.connectionState === "closed")) closePeer(from);
         const peer = pcs.current.get(from) ?? await makePeer(participant);
         if (!peer) return;
         const data = message.payload;

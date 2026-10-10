@@ -9,6 +9,7 @@ export type AvatarId =
   | "ronaldo_united_0708" | "ronaldo_madrid_1718" | "ronaldo_juve_1819"
   | "ronaldo_united_concept" | "ronaldo_alnassr" | "ronaldo_portugal_2018"
   | "messi_barca_2012" | "maldini_milan_0203" | "ramos_madrid_1718" | "ibrahimovic_milan_1112"
+  | "crimson_weaver" | "nightwarden" | "solar_sentinel" | "arc_titan" | "voltara"
   | "tarnished" | "malenia" | "radahn" | "ranni" | "melina"
   | "artorias" | "solaire" | "ornstein" | "black_knight" | "nameless_king"
   | "sekiro" | "ghost_samurai" | "kratos" | "geralt" | "doom_slayer"
@@ -26,6 +27,7 @@ export const SELECTABLE_AVATAR_IDS = [
   "ronaldo_united_0708", "ronaldo_madrid_1718", "ronaldo_juve_1819", "ronaldo_united_concept",
   "ronaldo_alnassr", "ronaldo_portugal_2018", "messi_barca_2012", "maldini_milan_0203",
   "ramos_madrid_1718", "ibrahimovic_milan_1112",
+  "crimson_weaver", "nightwarden", "solar_sentinel", "arc_titan", "voltara",
 ] as const;
 
 /** Everything the backend accepts, including retired gradient avatars.
