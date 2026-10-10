@@ -12,7 +12,7 @@
       "icon": "🦸",
       "fa": "ابرقهرمان‌ها",
       "en": "SUPERHERO ICONS",
-      "hint": "پرتره‌های سینمایی اسپایدرمن، بتمن و سوپرمن در سبک کالکتیبل"
+      "hint": "پنج ابرقهرمان اورجینال در سبک کالکتیبل سینمایی"
     },
     {
       "id": "elden",
@@ -532,6 +532,66 @@
       "mono": "11",
       "accent": "#dc2626",
       "accent2": "#111827"
+    },
+    {
+      "id": "crimson_weaver",
+      "no": 41,
+      "file": "41-crimson-weaver.webp",
+      "cat": "heroes",
+      "name": "بافنده سرخ",
+      "tag": "دیده‌بان شهر",
+      "jersey": "CRIMSON",
+      "mono": "CW",
+      "accent": "#ef4444",
+      "accent2": "#7f1d1d"
+    },
+    {
+      "id": "nightwarden",
+      "no": 42,
+      "file": "42-nightwarden.webp",
+      "cat": "heroes",
+      "name": "نگهبان شب",
+      "tag": "سایهٔ طلایی",
+      "jersey": "NIGHTWARDEN",
+      "mono": "NW",
+      "accent": "#fbbf24",
+      "accent2": "#111827"
+    },
+    {
+      "id": "solar_sentinel",
+      "no": 43,
+      "file": "43-solar-sentinel.webp",
+      "cat": "heroes",
+      "name": "نگهبان خورشید",
+      "tag": "سپر خورشیدی",
+      "jersey": "SOLAR",
+      "mono": "SS",
+      "accent": "#38bdf8",
+      "accent2": "#1e3a8a"
+    },
+    {
+      "id": "arc_titan",
+      "no": 44,
+      "file": "44-arc-titan.webp",
+      "cat": "heroes",
+      "name": "تیتان قوس",
+      "tag": "زره آرک",
+      "jersey": "ARC TITAN",
+      "mono": "AT",
+      "accent": "#f59e0b",
+      "accent2": "#7c2d12"
+    },
+    {
+      "id": "voltara",
+      "no": 45,
+      "file": "45-voltara.webp",
+      "cat": "heroes",
+      "name": "ولتارا",
+      "tag": "بانو آذرخش",
+      "jersey": "VOLTARA",
+      "mono": "VO",
+      "accent": "#22d3ee",
+      "accent2": "#0e7490"
     }
   ],
   "source": {

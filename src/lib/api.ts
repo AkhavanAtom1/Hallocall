@@ -18,10 +18,11 @@ async function passwordProof(username: string, password: string) {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const { headers, ...rest } = init ?? {};
   const res = await fetch(path, {
     credentials: "include",
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
-    ...init,
+    ...rest,
+    headers: { "Content-Type": "application/json", ...(headers ?? {}) },
   });
   const data: unknown = await res.json().catch(() => ({}));
   if (!res.ok) {

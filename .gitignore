@@ -1,6 +1,7 @@
 node_modules/
 dist/
 public/avatars/
+public/site/
 .sprite-work/
 .wrangler/
 .DS_Store

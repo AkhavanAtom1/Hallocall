@@ -213,9 +213,10 @@ function PageTop({eyebrow,title,desc,action}:{eyebrow:string;title:string;desc:s
 
 function Dashboard({user,go,onToast}:{user:User;go:(s:string)=>void;onToast:(s:string)=>void}){
   const [friends,setFriends]=useState<Friend[]>([]);
+  const inviting=useRef<string | null>(null);
   useEffect(()=>{let active=true;const load=()=>api.friends().then(d=>{if(active)setFriends(d.friends)}).catch(()=>{});load();const id=setInterval(load,AUTO_REFRESH_MS);return()=>{active=false;clearInterval(id)};},[]);
   const online=friends.filter(f=>f.online);
-  const quickCall=async(friend:Friend)=>{try{const d=await api.invite(friend.id);onToast(`درخواست تماس برای ${friend.username} ارسال شد`);go(`/call/${d.call.code}`);}catch(e){onToast(e instanceof Error?e.message:"خطا")}};
+  const quickCall=async(friend:Friend)=>{if(inviting.current)return;inviting.current=friend.id;try{const d=await api.invite(friend.id);onToast(`درخواست تماس برای ${friend.username} ارسال شد`);go(`/call/${d.call.code}`);}catch(e){onToast(e instanceof Error?e.message:"خطا")}finally{inviting.current=null}};
 
   return <div className="page">
     <PageTop eyebrow="WORKSPACE" title={`سلام ${user.username} 👋`} desc="همه‌چیز برای یک تماس سریع آماده است." action={<GlowButton tone="ghost" size="sm" icon="mask" onClick={()=>go("/profiles")}>گالری پروفایل</GlowButton>}/>
@@ -297,6 +298,7 @@ function Friends({user,go,onToast}:{user:User;go:(s:string)=>void;onToast:(s:str
   const [results,setResults]=useState<User[]>([]);
   const timer=useRef<number | undefined>(undefined);
   const searchVersion=useRef(0);
+  const inviting=useRef<string | null>(null);
   const load=useCallback(()=>api.friends().then(d=>{setFriends(d.friends);setRequests(d.requests)}).catch(()=>{}),[]);
   useEffect(()=>{load();const id=setInterval(load,AUTO_REFRESH_MS);return()=>clearInterval(id)},[load]);
   useEffect(()=>()=>{window.clearTimeout(timer.current);searchVersion.current++},[]);
@@ -314,7 +316,7 @@ function Friends({user,go,onToast}:{user:User;go:(s:string)=>void;onToast:(s:str
   const respond=async(id:string,action:"accept"|"decline")=>{try{await api.friendRespond(id,action);onToast(action==="accept"?"فرند جدید اضافه شد":"درخواست رد شد");load()}catch(e){onToast(e instanceof Error?e.message:"خطا")}};
   const cancelRequest=async(id:string)=>{try{await api.friendRemove(id);onToast("درخواست لغو شد");load()}catch(e){onToast(e instanceof Error?e.message:"خطا")}};
   const removeFriend=async(friend:Friend)=>{if(!window.confirm(`فرند ${friend.username} حذف شود؟`))return;try{await api.friendRemove(friend.friendshipId);onToast(`${friend.username} از فرندها حذف شد`);load()}catch(e){onToast(e instanceof Error?e.message:"خطا")}};
-  const call=async(f:Friend)=>{try{const d=await api.invite(f.id);onToast(`درخواست تماس برای ${f.username} ارسال شد`);go(`/call/${d.call.code}`)}catch(e){onToast(e instanceof Error?e.message:"خطا")}};
+  const call=async(f:Friend)=>{if(inviting.current)return;inviting.current=f.id;try{const d=await api.invite(f.id);onToast(`درخواست تماس برای ${f.username} ارسال شد`);go(`/call/${d.call.code}`)}catch(e){onToast(e instanceof Error?e.message:"خطا")}finally{inviting.current=null}};
 
   return <div className="page">
     <PageTop eyebrow="FRIENDS" title="فرندهای من" desc="یوزرنیم پیدا کن، درخواست بفرست، قبول کن و با یک کلیک وارد تماس شو."/>
@@ -376,6 +378,7 @@ function Profiles({user,onApply}:{user:User;onApply:(id:string)=>Promise<boolean
 
     {AVATAR_CATEGORIES.map(cat=>{
       const items=AVATARS.filter(a=>a.category===cat.id);
+      if(!items.length) return null;
       return <section className="cat-section" key={cat.id}>
         <div className="section-head"><div><span className="eyebrow"><i/>{cat.en}</span><h3>{cat.icon} {cat.fa}</h3><p>{cat.hint}</p></div><div className="count-pill">{items.length} پروفایل</div></div>
         <div className="avatar-showcase">
@@ -449,6 +452,7 @@ function Calls({go,onToast}:{go:(s:string)=>void;onToast:(s:string)=>void}){
   const [name,setName]=useState("Friend Call");
   const [code,setCode]=useState("");
   const [busy,setBusy]=useState(false);
+  const [artOk,setArtOk]=useState(true);
   const create=async()=>{setBusy(true);try{const d=await api.createCall(name);onToast("کال ساخته شد؛ شما به‌عنوان میزبان وارد شدید.");go(`/call/${d.call.code}`)}catch(e){onToast(e instanceof Error?e.message:"خطا در ساخت کال")}finally{setBusy(false)}};
   const join=async(e:FormEvent)=>{
     e.preventDefault();
@@ -466,7 +470,7 @@ function Calls({go,onToast}:{go:(s:string)=>void;onToast:(s:string)=>void}){
       <div className="create-call glass">
         <div className="card-lamp" aria-hidden="true"/>
         <div className="call-illustration">
-          <img src="/site/call-room.webp" alt="" width={768} height={768} loading="lazy" decoding="async"/>
+          {artOk && <img src="/site/call-room.webp" alt="" width={768} height={768} loading="lazy" decoding="async" onError={()=>setArtOk(false)}/>}
         </div>
         <div className="call-text">
           <span className="eyebrow"><i/> PRIVATE ROOM</span>

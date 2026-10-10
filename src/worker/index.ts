@@ -1,5 +1,5 @@
 import { CALL_CODE_LENGTH, MAX_CALL_PARTICIPANTS } from "../lib/call";
-import { KNOWN_AVATAR_IDS } from "../lib/types";
+import { SELECTABLE_AVATAR_IDS } from "../lib/types";
 
 export interface Env {
   HALLOCALL_DB: D1Database;
@@ -16,7 +16,7 @@ type SafeUser = { id: string; username: string; avatar: string };
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,20}$/;
-const AVATARS = new Set<string>(KNOWN_AVATAR_IDS);
+const SELECTABLE_AVATARS = new Set<string>(SELECTABLE_AVATAR_IDS);
 
 function json(data: unknown, init: ResponseInit = {}): Response {
   return new Response(JSON.stringify(data), { ...init, headers: { "content-type": "application/json; charset=utf-8", ...(init.headers ?? {}) } });
@@ -75,10 +75,23 @@ async function verifyPassword(proof: string, stored: string) {
 
 function cookies(req: Request) {
   const raw = req.headers.get("Cookie") ?? "";
-  return Object.fromEntries(raw.split(";").map((p) => p.trim()).filter(Boolean).map((p) => {
-    const i = p.indexOf("="); return [i >= 0 ? p.slice(0, i) : p, i >= 0 ? decodeURIComponent(p.slice(i + 1)) : ""];
-  }));
+  const out: Record<string, string> = {};
+  for (const part of raw.split(";")) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+    const i = trimmed.indexOf("=");
+    const key = i >= 0 ? trimmed.slice(0, i) : trimmed;
+    const rawVal = i >= 0 ? trimmed.slice(i + 1) : "";
+    try { out[key] = decodeURIComponent(rawVal); }
+    catch { out[key] = rawVal; }
+  }
+  return out;
 }
+
+function likeContains(value: string) {
+  return `%${value.replace(/([\\%_])/g, "\\$1")}%`;
+}
+
 const SESSION_COOKIE = "hallocall_session";
 
 type SessionRecord = {
@@ -229,11 +242,12 @@ export class CallRoom {
 
   /** Accepted WebSockets are the source of truth: in-memory maps disappear when
    * the Durable Object hibernates, while serialized attachments survive. */
-  private connectedSockets() {
+  private connectedSockets(except?: WebSocket) {
     return this.state.getWebSockets().flatMap((socket) => {
+      if (except && socket === except) return [];
       try {
         const peer = socket.deserializeAttachment() as { id:string; username:string; avatar:string; muted:boolean } | null;
-        if (!peer || socket.readyState !== WebSocket.OPEN) return [];
+        if (!peer || socket.readyState === WebSocket.CLOSING || socket.readyState === WebSocket.CLOSED) return [];
         return [[socket, peer] as const];
       } catch {
         return [];
@@ -241,8 +255,8 @@ export class CallRoom {
     });
   }
 
-  private snapshot() {
-    return this.connectedSockets().map(([, peer]) => ({
+  private snapshot(except?: WebSocket) {
+    return this.connectedSockets(except).map(([, peer]) => ({
       id:peer.id,
       username:peer.username,
       avatar:peer.avatar,
@@ -276,7 +290,10 @@ export class CallRoom {
         }
       }
 
-      if (this.connectedSockets().length >= MAX_CALL_PARTICIPANTS) {
+      /* Count everyone except this user so a reconnect into a full room is not
+         rejected just because the previous socket is still draining. */
+      const occupied = this.connectedSockets().filter(([, peer]) => peer.id !== id).length;
+      if (occupied >= MAX_CALL_PARTICIPANTS) {
         return new Response(`این کال به حداکثر ظرفیت ${MAX_CALL_PARTICIPANTS} نفر رسیده است.`, { status:409 });
       }
 
@@ -390,12 +407,12 @@ export class CallRoom {
 
   async webSocketClose(ws: WebSocket) {
     const session = ws.deserializeAttachment() as { id:string; username:string; avatar:string; muted:boolean } | null;
-    if (session) this.broadcast({ type:"presence", participants:this.snapshot() });
+    if (session) this.broadcast({ type:"presence", participants:this.snapshot(ws) }, ws);
   }
 
   async webSocketError(ws: WebSocket) {
     const session = ws.deserializeAttachment() as { id:string; username:string; avatar:string; muted:boolean } | null;
-    if (session) this.broadcast({ type:"presence", participants:this.snapshot() });
+    if (session) this.broadcast({ type:"presence", participants:this.snapshot(ws) }, ws);
   }
 }
 
@@ -498,7 +515,7 @@ async function api(env: Env, req: Request): Promise<Response> {
     const body = await req.json().catch(() => null) as { username?:unknown; passwordProof?:unknown; avatar?:unknown } | null;
     const username = typeof body?.username === "string" ? body.username.trim() : "";
     const passwordProofValue = typeof body?.passwordProof === "string" ? body.passwordProof : "";
-    const avatar = typeof body?.avatar === "string" && AVATARS.has(body.avatar) ? body.avatar : "ronaldo_red";
+    const avatar = typeof body?.avatar === "string" && SELECTABLE_AVATARS.has(body.avatar) ? body.avatar : "ronaldo_red";
     if (!USERNAME_RE.test(username)) return json({ error:"نام کاربری باید ۳ تا ۲۰ کاراکتر و فقط شامل حروف انگلیسی، عدد یا _ باشد." }, { status:400 });
     if (!/^[A-Za-z0-9+/]{43}=$/.test(passwordProofValue)) return json({ error:"اثبات رمز عبور نامعتبر است. صفحه را تازه‌سازی و دوباره تلاش کن." }, { status:400 });
     const exists = await env.HALLOCALL_DB.prepare(`SELECT id FROM users WHERE username_lower=?1`).bind(username.toLowerCase()).first();
@@ -549,7 +566,7 @@ async function api(env: Env, req: Request): Promise<Response> {
   if (path === "/api/profile" && method === "PATCH") {
     const auth = await requireUser(env,req); if ("response" in auth) return auth.response;
     const body = await req.json().catch(() => null) as { avatar?:unknown } | null;
-    const avatar = typeof body?.avatar === "string" && AVATARS.has(body.avatar) ? body.avatar : null;
+    const avatar = typeof body?.avatar === "string" && SELECTABLE_AVATARS.has(body.avatar) ? body.avatar : null;
     if (!avatar) return json({ error:"آواتار نامعتبر است." }, { status:400 });
     await env.HALLOCALL_DB.prepare(`UPDATE users SET avatar=?1 WHERE id=?2`).bind(avatar,auth.user.id).run();
     return json({ user:{...auth.user,avatar} });
@@ -563,8 +580,8 @@ async function api(env: Env, req: Request): Promise<Response> {
     const auth = await requireUser(env,req); if ("response" in auth) return auth.response;
     const q = (url.searchParams.get("q") ?? "").trim().toLowerCase();
     if (q.length < 2) return json({ users:[] });
-    const pattern = `%${q}%`;
-    const rows = await env.HALLOCALL_DB.prepare(`SELECT id,username,avatar FROM users WHERE username_lower LIKE ?1 AND id<>?2 ORDER BY username_lower LIMIT 12`).bind(pattern,auth.user.id).all<{id:string;username:string;avatar:string}>();
+    const pattern = likeContains(q);
+    const rows = await env.HALLOCALL_DB.prepare(`SELECT id,username,avatar FROM users WHERE username_lower LIKE ?1 ESCAPE '\\' AND id<>?2 ORDER BY username_lower LIMIT 12`).bind(pattern,auth.user.id).all<{id:string;username:string;avatar:string}>();
     return json({ users:rows.results.map(safeUser) });
   }
 
