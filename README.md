@@ -1,6 +1,6 @@
 # HalloCall — Cloudflare Edition
 
-یک اپلیکیشن تماس صوتی گروهی تا ۲۰ نفره با ظاهر شیشه‌ای/نئونی و دو تم Dark/Light؛ ساخته‌شده برای استقرار مستقیم روی **Cloudflare Workers + Workers Static Assets + D1 + Durable Objects**.
+یک اپلیکیشن تماس صوتی گروهی تا ۲۰ نفره با ظاهر شیشه‌ای/نئونی، حالت روشن/تاریک و شش پالت رنگی؛ ساخته‌شده برای استقرار مستقیم روی **Cloudflare Workers + Workers Static Assets + D1 + Durable Objects**.
 
 ## چیزهایی که در نسخه نهایی هست
 
@@ -30,7 +30,7 @@
 - دکمه‌های دایره‌ای برای میکروفون، چت، ایموجی، کیفیت صدا و خروج
 - کنترل کیفیت صدای خروجی از 12 تا 96 kbps؛ سه preset و slider، با اعمال روی senderهای فعلی و اتصال‌های جدید
 - آماده برای Cloudflare TURN؛ در نبود TURN از STUN fallback استفاده می‌شود
-- Dark Mode / Light Mode
+- حالت روشن/تاریک و ۶ تم رنگی قابل انتخاب از نوار بالای صفحه‌ها: بنفش نئونی، اقیانوسی، رز نئونی، زمردی، غروب و «مخصوص» (ترکیب اختصاصی بنفش، فیروزه‌ای، صورتی و طلایی)؛ انتخاب‌ها روی همین دستگاه ذخیره می‌شوند
 - Responsive برای موبایل و دسکتاپ
 - رابط responsive با glass و glow کنترل‌شده، پشتیبانی واقعی‌تر از تم روشن/تاریک و کاهش موشن در دستگاه‌های لمسی
 - مدیریت بهتر دعوت تماس: جلوگیری از زنگ‌زدن تکراری، انقضای دعوت‌های قدیمی و پایان درست تماس ردشده
@@ -64,6 +64,8 @@ hallocall/
 │  ├─ styles.css              # تم پایه
 │  ├─ premium.css             # لایهٔ بصری اصلی
 │  ├─ refinement.css           # اصلاح responsive، accessibility و کاهش موشن
+│  ├─ theme.css                # پالت‌های رنگی پویا و کنترل‌های نوار بالایی
+│  ├─ components/ThemeControls.tsx # انتخاب پالت رنگی و حالت روشن/تاریک
 │  ├─ components/CallRoom.tsx # اتاق تماس، WebRTC، چت و تنظیم بیت‌ریت
 │  ├─ components/Icon.tsx
 │  ├─ components/Scene.tsx    # پس‌زمینهٔ ثابت و helper spotlight
@@ -82,12 +84,23 @@ hallocall/
 └─ package.json
 ```
 
-## اجرای محلی UI
+## اجرای محلی
+
+برای اجرای کامل UI و API محلی، ابتدا migration دیتابیس محلی را اجرا کن؛ سپس در دو ترمینال Worker و رابط Vite را بالا بیاور. مسیرهای `/api` و `/ws` در Vite به Worker محلی proxy می‌شوند:
 
 ```bash
 npm install
+npm run db:migrate:local
+npm run worker:dev
+```
+
+در ترمینال دوم:
+
+```bash
 npm run dev
 ```
+
+اگر فقط بخواهی ظاهر رابط را ببینی، `npm run dev` به‌تنهایی هم اجرا می‌شود؛ ورود/ثبت‌نام و تماس برای کارکرد کامل به Worker و D1 محلی نیاز دارند.
 
 برای typecheck و build کامل:
 
@@ -95,7 +108,7 @@ npm run dev
 npm run verify
 ```
 
-برای اجرای نسخه‌ای که واقعاً توسط Wrangler سرو می‌شود:
+برای اجرای نسخه‌ای که خود Wrangler همراه با Static Assets سرو می‌کند:
 
 ```bash
 npm run cf:dev

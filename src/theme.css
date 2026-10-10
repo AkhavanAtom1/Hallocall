@@ -1,0 +1,394 @@
+/*
+ * HalloCall color palettes. This file is loaded last so a selection updates the
+ * whole app (surfaces, focus rings, buttons, ambient lighting and call controls)
+ * without changing semantic status colors such as online, mute, accept or decline.
+ */
+:root {
+  --theme-primary: #8b5cf6;
+  --theme-primary-bright: #c4b5fd;
+  --theme-primary-rgb: 139, 92, 246;
+  --theme-primary-bright-rgb: 196, 181, 253;
+  --theme-secondary: #22d3ee;
+  --theme-secondary-bright: #67e8f9;
+  --theme-secondary-rgb: 34, 211, 238;
+  --theme-secondary-bright-rgb: 103, 232, 249;
+  --theme-tertiary: #f472b6;
+  --theme-tertiary-rgb: 244, 114, 182;
+  --theme-warm: #fbbf24;
+  --theme-warm-rgb: 251, 191, 36;
+  --theme-button-start: #6d28d9;
+  --theme-button-end: #0e7490;
+  --theme-button-gradient: linear-gradient(125deg, var(--theme-button-start), var(--theme-button-end));
+  --theme-text-gradient: linear-gradient(120deg, var(--theme-primary-bright), var(--theme-secondary-bright) 72%);
+  --theme-glow: rgba(var(--theme-primary-rgb), .55);
+  --theme-wash: linear-gradient(112deg, var(--theme-primary) 0%, var(--theme-secondary) 58%, var(--theme-tertiary) 100%);
+  --accent: var(--theme-primary);
+  --accent-glow: var(--theme-glow);
+  --accent-soft: var(--theme-primary-bright);
+  --neon-violet: var(--theme-primary);
+  --neon-cyan: var(--theme-secondary);
+}
+
+:root[data-color-theme="ocean"] {
+  --theme-primary: #0ea5e9;
+  --theme-primary-bright: #7dd3fc;
+  --theme-primary-rgb: 14, 165, 233;
+  --theme-primary-bright-rgb: 125, 211, 252;
+  --theme-secondary: #14b8a6;
+  --theme-secondary-bright: #5eead4;
+  --theme-secondary-rgb: 20, 184, 166;
+  --theme-secondary-bright-rgb: 94, 234, 212;
+  --theme-tertiary: #38bdf8;
+  --theme-tertiary-rgb: 56, 189, 248;
+  --theme-button-start: #0369a1;
+  --theme-button-end: #0f766e;
+  --theme-glow: rgba(14, 165, 233, .48);
+  --theme-text-gradient: linear-gradient(120deg, #bae6fd, #99f6e4 72%);
+}
+
+:root[data-color-theme="rose"] {
+  --theme-primary: #db2777;
+  --theme-primary-bright: #f9a8d4;
+  --theme-primary-rgb: 219, 39, 119;
+  --theme-primary-bright-rgb: 249, 168, 212;
+  --theme-secondary: #7c3aed;
+  --theme-secondary-bright: #c4b5fd;
+  --theme-secondary-rgb: 124, 58, 237;
+  --theme-secondary-bright-rgb: 196, 181, 253;
+  --theme-tertiary: #22d3ee;
+  --theme-tertiary-rgb: 34, 211, 238;
+  --theme-button-start: #be185d;
+  --theme-button-end: #6d28d9;
+  --theme-glow: rgba(219, 39, 119, .5);
+  --theme-wash: linear-gradient(112deg, #ec4899 0%, #8b5cf6 58%, #22d3ee 100%);
+  --theme-text-gradient: linear-gradient(120deg, #fbcfe8, #ddd6fe 58%, #a5f3fc 100%);
+}
+
+:root[data-color-theme="emerald"] {
+  --theme-primary: #10b981;
+  --theme-primary-bright: #6ee7b7;
+  --theme-primary-rgb: 16, 185, 129;
+  --theme-primary-bright-rgb: 110, 231, 183;
+  --theme-secondary: #06b6d4;
+  --theme-secondary-bright: #67e8f9;
+  --theme-secondary-rgb: 6, 182, 212;
+  --theme-secondary-bright-rgb: 103, 232, 249;
+  --theme-tertiary: #84cc16;
+  --theme-tertiary-rgb: 132, 204, 22;
+  --theme-button-start: #047857;
+  --theme-button-end: #0e7490;
+  --theme-glow: rgba(16, 185, 129, .48);
+  --theme-wash: linear-gradient(112deg, #10b981 0%, #06b6d4 58%, #84cc16 100%);
+  --theme-text-gradient: linear-gradient(120deg, #a7f3d0, #a5f3fc 72%);
+}
+
+:root[data-color-theme="sunset"] {
+  --theme-primary: #ea580c;
+  --theme-primary-bright: #fdba74;
+  --theme-primary-rgb: 234, 88, 12;
+  --theme-primary-bright-rgb: 253, 186, 116;
+  --theme-secondary: #e11d48;
+  --theme-secondary-bright: #fda4af;
+  --theme-secondary-rgb: 225, 29, 72;
+  --theme-secondary-bright-rgb: 253, 164, 175;
+  --theme-tertiary: #fbbf24;
+  --theme-tertiary-rgb: 251, 191, 36;
+  --theme-button-start: #c2410c;
+  --theme-button-end: #be123c;
+  --theme-glow: rgba(234, 88, 12, .5);
+  --theme-wash: linear-gradient(112deg, #f97316 0%, #f43f5e 58%, #fbbf24 100%);
+  --theme-text-gradient: linear-gradient(120deg, #fed7aa, #fecdd3 72%);
+}
+
+:root[data-color-theme="special"] {
+  --theme-primary: #8b5cf6;
+  --theme-primary-bright: #c4b5fd;
+  --theme-primary-rgb: 139, 92, 246;
+  --theme-primary-bright-rgb: 196, 181, 253;
+  --theme-secondary: #22d3ee;
+  --theme-secondary-bright: #67e8f9;
+  --theme-secondary-rgb: 34, 211, 238;
+  --theme-secondary-bright-rgb: 103, 232, 249;
+  --theme-tertiary: #f472b6;
+  --theme-tertiary-rgb: 244, 114, 182;
+  --theme-warm: #fbbf24;
+  --theme-warm-rgb: 251, 191, 36;
+  --theme-button-start: #6d28d9;
+  --theme-button-end: #0e7490;
+  --theme-button-gradient: linear-gradient(108deg, #6d28d9 0%, #0e7490 38%, #be185d 72%, #a16207 100%);
+  --theme-glow: rgba(139, 92, 246, .58);
+  --theme-wash: linear-gradient(112deg, #8b5cf6 0%, #22d3ee 38%, #f472b6 72%, #fbbf24 100%);
+  --theme-text-gradient: linear-gradient(112deg, #c4b5fd 0%, #67e8f9 38%, #f9a8d4 72%, #fde68a 100%);
+}
+
+/* Static ambient lighting keeps the richer palettes lightweight in a call. */
+body {
+  background: #04060d;
+  color: var(--text);
+}
+.app-bg {
+  background:
+    radial-gradient(58rem 38rem at 8% -12%, rgba(var(--theme-primary-rgb), .19), transparent 62%),
+    radial-gradient(52rem 36rem at 100% 105%, rgba(var(--theme-secondary-rgb), .12), transparent 60%),
+    radial-gradient(32rem 26rem at 78% 16%, rgba(var(--theme-tertiary-rgb), .07), transparent 68%),
+    #04060d;
+}
+.scene::before {
+  background:
+    radial-gradient(38rem 22rem at 24% 8%, rgba(var(--theme-primary-rgb), .20), transparent 70%),
+    radial-gradient(34rem 20rem at 82% 2%, rgba(var(--theme-secondary-rgb), .14), transparent 72%),
+    radial-gradient(28rem 18rem at 72% 18%, rgba(var(--theme-tertiary-rgb), .09), transparent 74%);
+}
+.scene-call::before {
+  background:
+    radial-gradient(36rem 20rem at 50% 0%, rgba(var(--theme-primary-rgb), .19), transparent 72%),
+    radial-gradient(30rem 18rem at 12% 22%, rgba(var(--theme-secondary-rgb), .12), transparent 74%),
+    radial-gradient(26rem 18rem at 88% 16%, rgba(var(--theme-tertiary-rgb), .09), transparent 74%);
+}
+.call-page {
+  background:
+    radial-gradient(48rem 30rem at 50% -12%, rgba(var(--theme-primary-rgb), .14), transparent 66%),
+    radial-gradient(36rem 26rem at 4% 62%, rgba(var(--theme-secondary-rgb), .09), transparent 66%),
+    var(--bg);
+}
+
+:root.light body { background: #f2f5fb; }
+:root.light .app-bg {
+  background:
+    radial-gradient(58rem 38rem at 8% -12%, rgba(var(--theme-primary-rgb), .11), transparent 62%),
+    radial-gradient(52rem 36rem at 100% 105%, rgba(var(--theme-secondary-rgb), .08), transparent 60%),
+    radial-gradient(32rem 26rem at 78% 16%, rgba(var(--theme-tertiary-rgb), .055), transparent 68%),
+    #f2f5fb;
+}
+:root.light .call-page {
+  background:
+    radial-gradient(48rem 30rem at 50% -12%, rgba(var(--theme-primary-rgb), .09), transparent 66%),
+    radial-gradient(36rem 26rem at 4% 62%, rgba(var(--theme-secondary-rgb), .06), transparent 66%),
+    #f2f5fb;
+}
+:root.light .glass:after {
+  background: linear-gradient(125deg, rgba(255, 255, 255, .86), transparent 22% 78%, rgba(var(--theme-primary-rgb), .065));
+}
+
+::selection { background: rgba(var(--theme-primary-rgb), .38); color: #fff; }
+button:focus-visible,
+input:focus-visible,
+.showcase-card:focus-visible,
+.avatar-choice:focus-visible {
+  outline-color: var(--theme-secondary-bright);
+}
+.hero-copy h2 em { background-image: var(--theme-text-gradient); }
+
+.glow-btn.tone-primary {
+  --a: var(--theme-button-start);
+  --b: var(--theme-button-end);
+  --sh: var(--theme-glow);
+  background: var(--theme-button-gradient);
+}
+.nav-item:before {
+  background: linear-gradient(90deg, rgba(var(--theme-primary-rgb), .22), transparent 62%);
+}
+.nav-item.active {
+  background: linear-gradient(135deg, rgba(var(--theme-primary-rgb), .34), rgba(var(--theme-secondary-rgb), .14));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12), 0 14px 34px -18px rgba(var(--theme-primary-rgb), .72);
+}
+.nav-item.active i { background: linear-gradient(180deg, var(--theme-primary-bright), var(--theme-secondary)); }
+.nav-item.active .nav-icon {
+  color: var(--theme-primary-bright);
+  background: linear-gradient(135deg, rgba(var(--theme-primary-rgb), .3), rgba(var(--theme-secondary-rgb), .16));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .14), 0 0 24px -6px var(--theme-glow);
+}
+.stat-card button,
+.text-btn,
+.quality-number,
+.quality-value,
+.quality-slider strong { color: var(--theme-primary-bright); }
+.quality-slider input { accent-color: var(--theme-primary); }
+.call-code-chip {
+  border-color: rgba(var(--theme-secondary-bright-rgb), .25);
+  background: linear-gradient(135deg, rgba(var(--theme-secondary-rgb), .14), rgba(var(--theme-primary-rgb), .16));
+}
+.call-code-chip:hover { border-color: rgba(var(--theme-secondary-bright-rgb), .58); }
+.call-code-chip strong { color: var(--theme-secondary-bright); }
+.call-code-chip svg { color: var(--theme-primary-bright); }
+.call-toolbar .tool-circle.active {
+  color: var(--theme-primary-bright);
+  background: linear-gradient(135deg, rgba(var(--theme-primary-rgb), .38), rgba(var(--theme-secondary-rgb), .17));
+}
+.chat-msg.mine p { background: linear-gradient(135deg, rgba(var(--theme-primary-rgb), .22), rgba(var(--theme-secondary-rgb), .09)); }
+
+/* The signature palette deliberately uses all four house lights at once. */
+:root[data-color-theme="special"] .app-bg {
+  background:
+    radial-gradient(58rem 38rem at 8% -12%, rgba(139, 92, 246, .20), transparent 62%),
+    radial-gradient(52rem 36rem at 100% 105%, rgba(34, 211, 238, .14), transparent 60%),
+    radial-gradient(34rem 24rem at 78% 15%, rgba(244, 114, 182, .13), transparent 70%),
+    radial-gradient(30rem 24rem at 12% 80%, rgba(251, 191, 36, .075), transparent 72%),
+    #04060d;
+}
+:root[data-color-theme="special"] .scene::before {
+  background:
+    radial-gradient(38rem 22rem at 24% 8%, rgba(139, 92, 246, .22), transparent 70%),
+    radial-gradient(34rem 20rem at 82% 2%, rgba(34, 211, 238, .15), transparent 72%),
+    radial-gradient(28rem 18rem at 65% 25%, rgba(244, 114, 182, .14), transparent 72%),
+    radial-gradient(24rem 18rem at 15% 52%, rgba(251, 191, 36, .08), transparent 72%);
+}
+:root.light[data-color-theme="special"] .app-bg {
+  background:
+    radial-gradient(58rem 38rem at 8% -12%, rgba(139, 92, 246, .12), transparent 62%),
+    radial-gradient(52rem 36rem at 100% 105%, rgba(34, 211, 238, .09), transparent 60%),
+    radial-gradient(34rem 24rem at 78% 15%, rgba(244, 114, 182, .08), transparent 70%),
+    radial-gradient(30rem 24rem at 12% 80%, rgba(251, 191, 36, .055), transparent 72%),
+    #f2f5fb;
+}
+
+/* Palette selector and the light/dark switch in the app's top bar. */
+.theme-controls {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+}
+.theme-picker { position: relative; display: inline-flex; }
+.theme-picker-trigger,
+.theme-mode-toggle {
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  color: var(--text);
+  background: linear-gradient(135deg, rgba(255, 255, 255, .08), rgba(255, 255, 255, .025));
+  font: inherit;
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: border-color .14s ease, background-color .14s ease, transform .14s ease;
+}
+.theme-picker-trigger:hover,
+.theme-mode-toggle:hover {
+  transform: translateY(-1px);
+  border-color: rgba(var(--theme-primary-rgb), .5);
+  background: linear-gradient(135deg, rgba(var(--theme-primary-rgb), .12), rgba(var(--theme-secondary-rgb), .06));
+}
+.theme-picker-trigger[aria-expanded="true"] { border-color: rgba(var(--theme-primary-rgb), .62); }
+.theme-picker-swatch,
+.theme-option-swatch {
+  display: block;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--theme-swatch);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .35), 0 0 16px -5px var(--theme-glow);
+}
+.theme-picker-swatch { width: 18px; height: 18px; }
+.theme-picker-label { white-space: nowrap; }
+.theme-mode-toggle { min-width: 42px; }
+.theme-controls.compact { gap: 5px; }
+.theme-picker-trigger.compact {
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  min-height: 40px;
+  padding: 0;
+  gap: 0;
+  border-radius: 13px;
+}
+.theme-picker-trigger.compact .theme-picker-swatch { width: 19px; height: 19px; }
+.theme-controls.compact .theme-mode-toggle {
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  min-height: 40px;
+  padding: 0;
+  border-radius: 13px;
+}
+.theme-menu {
+  position: absolute;
+  top: calc(100% + 9px);
+  inset-inline-end: 0;
+  z-index: 180;
+  width: min(340px, calc(100vw - 28px));
+  padding: 10px;
+  overflow: visible;
+  border-radius: 19px;
+  background: linear-gradient(158deg, rgba(20, 25, 44, .99), rgba(10, 13, 24, .99));
+  border-color: rgba(var(--theme-primary-rgb), .2);
+  box-shadow: 0 24px 62px rgba(0, 0, 0, .5), 0 0 36px -14px var(--theme-glow);
+}
+.theme-menu-heading { display: grid; gap: 2px; padding: 4px 7px 9px; }
+.theme-menu-heading b { font-size: 12px; }
+.theme-menu-heading span { color: var(--muted); font-size: 9px; }
+.theme-option {
+  width: 100%;
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  border: 1px solid transparent;
+  border-radius: 13px;
+  color: var(--text);
+  text-align: start;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+.theme-option:hover,
+.theme-option.selected {
+  border-color: rgba(var(--theme-primary-rgb), .3);
+  background: linear-gradient(100deg, rgba(var(--theme-primary-rgb), .13), rgba(var(--theme-secondary-rgb), .055));
+}
+.theme-option-swatch { width: 25px; height: 25px; }
+.theme-option-copy { flex: 1; min-width: 0; display: grid; gap: 1px; }
+.theme-option-copy b { font-size: 10px; }
+.theme-option-copy small { color: var(--muted); font-size: 8px; line-height: 1.7; }
+.theme-option > svg { flex: 0 0 auto; color: var(--theme-primary-bright); }
+
+.auth-theme-controls { position: fixed; top: 24px; right: 24px; z-index: 80; }
+.call-head-actions .theme-controls.compact { margin-inline-end: 2px; }
+.call-head-actions .theme-menu { top: calc(100% + 8px); }
+
+:root.light .theme-picker-trigger,
+:root.light .theme-mode-toggle {
+  background: linear-gradient(135deg, rgba(255, 255, 255, .95), rgba(239, 243, 250, .88));
+  border-color: rgba(24, 33, 53, .13);
+}
+:root.light .theme-picker-trigger:hover,
+:root.light .theme-mode-toggle:hover { background: linear-gradient(135deg, rgba(var(--theme-primary-rgb), .08), rgba(var(--theme-secondary-rgb), .07)); }
+:root.light .theme-menu {
+  background: linear-gradient(158deg, rgba(255, 255, 255, .99), rgba(247, 249, 253, .99));
+  border-color: rgba(var(--theme-primary-rgb), .2);
+  box-shadow: 0 24px 62px rgba(45, 66, 110, .2), 0 0 32px -14px var(--theme-glow);
+}
+:root.light .theme-option:hover,
+:root.light .theme-option.selected { background: linear-gradient(100deg, rgba(var(--theme-primary-rgb), .09), rgba(var(--theme-secondary-rgb), .06)); }
+:root.light .nav-item.active { color: #172033; }
+:root.light .nav-item.active .nav-icon { color: var(--theme-primary); }
+:root.light .call-toolbar .tool-circle.active { color: var(--theme-primary); }
+:root.light .participant-card.self .participant-name b,
+:root.light .text-btn,
+:root.light .stat-card button { color: var(--theme-primary); }
+:root.light .chat-msg.mine p { color: #20283a; }
+:root.light .quality-number,
+:root.light .quality-value,
+:root.light .quality-slider strong { color: var(--theme-primary); }
+
+@media (max-width: 760px) {
+  .auth-theme-controls { top: 14px; right: 14px; }
+  .page-top { align-items: flex-start; }
+  .top-actions { align-items: center; }
+  .theme-controls:not(.compact) { margin-inline-start: auto; }
+  .live-pill { flex: 1 1 100%; }
+  .call-head-actions .theme-controls.compact { gap: 3px; }
+}
+@media (max-width: 370px) {
+  .auth-theme-controls { top: 10px; right: 10px; }
+  .theme-controls.compact .theme-mode-toggle,
+  .theme-picker-trigger.compact { width: 36px; min-width: 36px; height: 36px; min-height: 36px; }
+  .theme-menu { width: min(320px, calc(100vw - 20px)); }
+  .call-head-actions .theme-controls.compact { gap: 2px; margin: 0; }
+}
