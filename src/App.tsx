@@ -15,6 +15,7 @@ import { CallPage } from "./components/CallRoom";
 import { ThemeControls } from "./components/ThemeControls";
 import { COLOR_THEME_STORAGE_KEY, readSavedColorTheme } from "./lib/theme";
 import type { ColorThemeId } from "./lib/theme";
+import { startSpecialPalette } from "./lib/specialPalette";
 
 type Route = { page:"login" } | { page:"dashboard" } | { page:"friends" } | { page:"profiles" } | { page:"calls" } | { page:"call"; code:string };
 
@@ -78,6 +79,11 @@ export function App() {
   useEffect(()=>{
     document.documentElement.dataset.colorTheme = colorTheme;
     try { localStorage.setItem(COLOR_THEME_STORAGE_KEY,colorTheme); } catch {}
+  },[colorTheme]);
+  /* «مخصوص» slowly drifts its house colours; every other palette is static. */
+  useEffect(()=>{
+    if(colorTheme!=="special") return;
+    return startSpecialPalette(document.documentElement);
   },[colorTheme]);
   useEffect(()=>{ let active=true; api.me().then((d)=>{if(active)setUser(d.user)}).catch(()=>{}).finally(()=>{if(active)setBooting(false)}); return()=>{active=false}; },[]);
   useEffect(()=>{ if(booting)return; if(user && route.page==="login")go(takeReturnPath() ?? "/dashboard"); else if(!user && route.page!=="login"){ if(route.page==="call")stashReturnPath(); go("/login"); } },[booting,user,route.page,go]);
@@ -254,7 +260,7 @@ function Dashboard({user,go,onToast,themeControls}:{user:User;go:(s:string)=>voi
 
       <div className="stat-card glass">
         <div className="stat-icon purple"><Icon name="signal"/></div>
-        <div><span>بازهٔ کیفیت صدا</span><b>۱۲–۹۶ kbps</b></div>
+        <div><span>بازهٔ کیفیت صدا</span><b>۱۲ تا ۹۶ kbps</b></div>
         <div className="spark-bars" aria-hidden="true"><i/><i/><i/><i/><i/><i/><i/><i/></div>
         <button onClick={()=>go("/calls")}>رفتن به کال‌ها <Icon name="arrow" size={15}/></button>
       </div>

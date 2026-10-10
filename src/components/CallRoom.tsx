@@ -199,13 +199,10 @@ export function CallPage({
       analyser.smoothingTimeConstant = 0.72;
       source.connect(analyser);
       const data = new Uint8Array(analyser.frequencyBinCount);
-      let animationFrame = 0;
-      let lastSample = 0;
-
-      const tick = (time: number) => {
-        animationFrame = requestAnimationFrame(tick);
-        if (time - lastSample < 120) return;
-        lastSample = time;
+      /* Speaking detection only needs ~8 samples a second. A 120 ms timer does
+         that without a per-frame loop per participant, which keeps the call
+         cheap while the user plays something heavy in another window. */
+      const tick = () => {
         analyser.getByteFrequencyData(data);
         const average = data.reduce((total, value) => total + value, 0) / Math.max(data.length, 1);
         const wasSpeaking = speakingState.current.get(id) ?? false;
@@ -223,10 +220,10 @@ export function CallPage({
         }
       };
 
-      animationFrame = requestAnimationFrame(tick);
+      const timer = window.setInterval(tick, 120);
       if (context.state === "suspended") void context.resume().catch(() => {});
       analyserCleanup.current.set(id, () => {
-        cancelAnimationFrame(animationFrame);
+        window.clearInterval(timer);
         source.disconnect();
         analyser.disconnect();
         void context.close().catch(() => {});

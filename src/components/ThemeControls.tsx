@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent } from "react";
-import { COLOR_THEMES, getColorTheme } from "../lib/theme";
+import { COLOR_THEMES, COLOR_THEME_GROUPS, getColorTheme } from "../lib/theme";
 import type { ColorThemeId } from "../lib/theme";
 import { Icon } from "./Icon";
 
@@ -111,23 +111,32 @@ function ThemePicker({ colorTheme, onChange, compact }: { colorTheme: ColorTheme
             <b>تم رنگی</b>
             <span>فضای HalloCall را انتخاب کن</span>
           </div>
-          {COLOR_THEMES.map((theme) => (
-            <button
-              key={theme.id}
-              type="button"
-              role="menuitemradio"
-              aria-checked={theme.id === colorTheme}
-              className={theme.id === colorTheme ? "theme-option selected" : "theme-option"}
-              onClick={() => choose(theme.id)}
-            >
-              <span className="theme-option-swatch" style={{ "--theme-swatch": theme.swatch } as CSSProperties} aria-hidden="true" />
-              <span className="theme-option-copy">
-                <b>{theme.label}</b>
-                <small>{theme.description}</small>
-              </span>
-              {theme.id === colorTheme && <Icon name="check" size={16} />}
-            </button>
-          ))}
+          {COLOR_THEME_GROUPS.map((group) => {
+            const themes = COLOR_THEMES.filter((theme) => theme.group === group.id);
+            if (!themes.length) return null;
+            return (
+              <div key={group.id} className="theme-group" role="group" aria-label={group.label}>
+                <span className="theme-group-label" aria-hidden="true">{group.label}</span>
+                {themes.map((theme) => (
+                  <button
+                    key={theme.id}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={theme.id === colorTheme}
+                    className={theme.id === colorTheme ? "theme-option selected" : "theme-option"}
+                    onClick={() => choose(theme.id)}
+                  >
+                    <span className="theme-option-swatch" style={{ "--theme-swatch": theme.swatch } as CSSProperties} aria-hidden="true" />
+                    <span className="theme-option-copy">
+                      <b>{theme.label}</b>
+                      <small>{theme.description}</small>
+                    </span>
+                    {theme.id === colorTheme && <Icon name="check" size={16} />}
+                  </button>
+                ))}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

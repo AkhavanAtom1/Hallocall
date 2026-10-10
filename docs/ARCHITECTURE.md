@@ -49,10 +49,15 @@ The UI is deliberately "lite": it is meant to stay open in a background window
 while the user plays a heavy game and talks with friends. The rules are enforced
 in `src/lite.css`, the last stylesheet in the cascade.
 
-- **No infinite animations.** The only looping animation left is the loading
-  spinner (`.spinner`, `.tiny-spinner`). Everything else — auroras, sparks,
-  orbiting avatars, pulsing rings, halo spins, light sweeps, `float`/`pulse`
-  loops — is disabled with a single global rule.
+- **No infinite CSS animations.** The only looping CSS animation left is the
+  loading spinner (`.spinner`, `.tiny-spinner`). Everything else — auroras,
+  sparks, orbiting avatars, pulsing rings, halo spins, light sweeps,
+  `float`/`pulse` loops — is disabled with a single global rule.
+- **One deliberate exception: the «مخصوص» palette.** Its colours drift slowly
+  through `src/lib/specialPalette.ts`, a single timer (~1.6 updates/s) that
+  rewrites four CSS variables on `<html>`. It is skipped while the tab is
+  hidden, disabled under `prefers-reduced-motion`, and removed when another
+  palette is chosen.
 - **No `backdrop-filter`, `filter: blur()` or `mix-blend-mode`** on interface
   surfaces, overlays, toolbars, drawers or dialogs. Panels use opaque gradients
   so text contrast does not depend on a blur pass.
@@ -71,9 +76,15 @@ Layout rules that come with it: bottom navigation + bottom-sheet chat on phones,
 ## Appearance and themes
 
 The color palette is a browser preference (separate from light/dark mode), not
-account data. `src/lib/theme.ts` defines the six named palettes and `src/theme.css`
-maps them to shared design tokens. The selected palette is stored in local
-storage and applied on the document root before the app renders, avoiding a
-flash of the default colors. The signature **Special** palette blends violet,
-aqua, rose and gold while keeping status colors (online, mute, accept/decline)
-semantically recognizable.
+account data. `src/lib/theme.ts` defines the eleven palettes in three groups
+(special, cheerful, classic) and `src/theme.css` maps each to the same set of
+tokens: four "house lights" (`primary`, `secondary`, `tertiary`, `warm`), their
+bright variants, the button gradient and `--theme-ink`. `--theme-ink` is a
+darker accent used for text on light backgrounds so cheerful yellows stay
+readable in light mode.
+
+The selected palette is stored in local storage and applied on the document
+root before the app renders (see the inline script in `index.html`), avoiding a
+flash of the default colors. The default is **مخصوص** (Special), which blends
+violet, aqua, rose and gold and drifts slowly while keeping status colors
+(online, mute, accept/decline) semantically recognizable.

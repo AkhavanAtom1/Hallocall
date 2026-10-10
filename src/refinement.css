@@ -85,8 +85,8 @@ body { min-height: 100vh; background: var(--bg); color: var(--text); }
 }
 :root.light .glass::after { opacity: .32; }
 :root.light .eyebrow { color: #55627a; }
-:root.light .nav-item.active { color: #4c2b91; }
-:root.light .nav-item.active .nav-icon { color: #6542b7; }
+:root.light .nav-item.active { color: var(--theme-ink); }
+:root.light .nav-item.active .nav-icon { color: var(--theme-ink); }
 :root.light .field input,
 :root.light .search-wrap input,
 :root.light .chat-compose input,
@@ -102,8 +102,8 @@ body { min-height: 100vh; background: var(--bg); color: var(--text); }
 :root.light .join-card input::placeholder { color: #7b879a; }
 :root.light .call-toolbar .tool { color: #536078; }
 :root.light .call-toolbar .tool-circle { background: rgba(80, 93, 117, .07); }
-:root.light .call-toolbar .tool-circle.active { color: #5b3caa; background: rgba(var(--theme-primary-rgb), .12); }
-:root.light .participant-card.self .participant-name b { color: #5c3da2; }
+:root.light .call-toolbar .tool-circle.active { color: var(--theme-ink); background: rgba(var(--theme-primary-rgb), .12); }
+:root.light .participant-card.self .participant-name b { color: var(--theme-ink); }
 :root.light .chat-msg p { color: #20283a; background: rgba(65, 79, 105, .08); }
 :root.light .chat-msg.mine p { background: rgba(var(--theme-primary-rgb), .13); }
 :root.light .quality-preset { color: #313b50; background: rgba(39, 53, 79, .045); border-color: rgba(34, 48, 74, .12); }
@@ -111,7 +111,7 @@ body { min-height: 100vh; background: var(--bg); color: var(--text); }
 :root.light .quality-help,
 :root.light .chat-message-meta,
 :root.light .chat-notice { color: #65708a; }
-:root.light .text-btn { color: #6842bd; }
+:root.light .text-btn { color: var(--theme-ink); }
 :root.light .page-top h1 { color: #141b2a; }
 
 /* The mobile navigation was inheriting width:100% for each horizontal item.
