@@ -15,6 +15,26 @@ import { CallPage } from "./components/CallRoom";
 
 type Route = { page:"login" } | { page:"dashboard" } | { page:"friends" } | { page:"profiles" } | { page:"calls" } | { page:"call"; code:string };
 
+/** Pages that surface requests (friends, dashboard, incoming calls) re-fetch on this
+ * cadence so friend requests / call invites appear within a second or two without a
+ * manual reload. */
+const AUTO_REFRESH_MS = 1500;
+
+/** Direct /call/<code> links must survive the login screen: a visitor who opens a
+ * shared invite link logs in (or registers) and lands straight inside that call. */
+const RETURN_TO_KEY = "hallocall-return-to";
+function stashReturnPath(pathname = location.pathname) {
+  if (!pathname.startsWith("/call/")) return;
+  try { sessionStorage.setItem(RETURN_TO_KEY, pathname); } catch {}
+}
+function takeReturnPath() {
+  try {
+    const saved = sessionStorage.getItem(RETURN_TO_KEY);
+    sessionStorage.removeItem(RETURN_TO_KEY);
+    return saved && saved.startsWith("/call/") ? saved : null;
+  } catch { return null; }
+}
+
 function routeFromPath(path = location.pathname): Route {
   if (path.startsWith("/call/")) {
     const segment = path.slice(6).split("/")[0];
@@ -51,21 +71,24 @@ export function App() {
     try { localStorage.setItem("hallocall-theme",dark?"dark":"light"); } catch {}
   },[dark]);
   useEffect(()=>{ let active=true; api.me().then((d)=>{if(active)setUser(d.user)}).catch(()=>{}).finally(()=>{if(active)setBooting(false)}); return()=>{active=false}; },[]);
-  useEffect(()=>{ if(booting)return; if(user && route.page==="login")go("/dashboard"); else if(!user && route.page!=="login")go("/login"); },[booting,user,route.page,go]);
+  useEffect(()=>{ if(booting)return; if(user && route.page==="login")go(takeReturnPath() ?? "/dashboard"); else if(!user && route.page!=="login"){ if(route.page==="call")stashReturnPath(); go("/login"); } },[booting,user,route.page,go]);
   useEffect(()=>{ if (!user) return; api.touch().catch(()=>{}); const id=setInterval(()=>api.touch().catch(()=>{}),10000); return()=>clearInterval(id); },[user]);
-  useEffect(()=>{ if(!user || route.page==="call") return; let active=true; const poll=async()=>{ try { const d=await api.incoming(); if(active) setIncoming(d.calls[0]??null);} catch{} }; poll(); const id=setInterval(poll,2200); return()=>{active=false;clearInterval(id)}; },[user,route.page]);
+  useEffect(()=>{ if(!user || route.page==="call") return; let active=true; const poll=async()=>{ try { const d=await api.incoming(); if(active) setIncoming(d.calls[0]??null);} catch{} }; poll(); const id=setInterval(poll,AUTO_REFRESH_MS); return()=>{active=false;clearInterval(id)}; },[user,route.page]);
   useEffect(()=>{ if(!toast) return; const id=setTimeout(()=>setToast(undefined),2500); return()=>clearTimeout(id); },[toast]);
 
   const logout=async()=>{ await api.logout().catch(()=>{}); setUser(null); go("/login"); };
-  const signIn=(u:User)=>{ setUser(u); go("/dashboard"); };
+  const signIn=(u:User)=>{ setUser(u); go(takeReturnPath() ?? "/dashboard"); };
   const applyAvatar=async(avatarId:string)=>{ try{ const d=await api.profile(avatarId); setUser(d.user); setToast(`پروفایل ${avatarOf(avatarId).name} ذخیره شد`); return true; } catch(e){ setToast(e instanceof Error?e.message:"ذخیره نشد"); return false; } };
   const respondIncoming=async(action:"accept"|"decline")=>{
     if(!incoming || incomingBusy)return;
+    const invite=incoming;
     setIncomingBusy(true);
     try {
-      const d=await api.respondCall(incoming.inviteId,action);
+      const d=await api.respondCall(invite.inviteId,action);
       setIncoming(null);
-      if(action==="accept" && d.code)go(`/call/${d.code}`);
+      /* Always land on the caller's call — the invite's own code is the source of
+         truth, so accepting can never open a different/new room. */
+      if(action==="accept")go(`/call/${(d.code ?? invite.code).toUpperCase()}`);
     } catch(e){setToast(e instanceof Error?e.message:"خطا")}
     finally{setIncomingBusy(false)}
   };
@@ -190,7 +213,7 @@ function PageTop({eyebrow,title,desc,action}:{eyebrow:string;title:string;desc:s
 
 function Dashboard({user,go,onToast}:{user:User;go:(s:string)=>void;onToast:(s:string)=>void}){
   const [friends,setFriends]=useState<Friend[]>([]);
-  useEffect(()=>{let active=true;const load=()=>api.friends().then(d=>{if(active)setFriends(d.friends)}).catch(()=>{});load();const id=setInterval(load,9000);return()=>{active=false;clearInterval(id)};},[]);
+  useEffect(()=>{let active=true;const load=()=>api.friends().then(d=>{if(active)setFriends(d.friends)}).catch(()=>{});load();const id=setInterval(load,AUTO_REFRESH_MS);return()=>{active=false;clearInterval(id)};},[]);
   const online=friends.filter(f=>f.online);
   const quickCall=async(friend:Friend)=>{try{const d=await api.invite(friend.id);onToast(`درخواست تماس برای ${friend.username} ارسال شد`);go(`/call/${d.call.code}`);}catch(e){onToast(e instanceof Error?e.message:"خطا")}};
 
@@ -275,7 +298,7 @@ function Friends({user,go,onToast}:{user:User;go:(s:string)=>void;onToast:(s:str
   const timer=useRef<number | undefined>(undefined);
   const searchVersion=useRef(0);
   const load=useCallback(()=>api.friends().then(d=>{setFriends(d.friends);setRequests(d.requests)}).catch(()=>{}),[]);
-  useEffect(()=>{load();const id=setInterval(load,9000);return()=>clearInterval(id)},[load]);
+  useEffect(()=>{load();const id=setInterval(load,AUTO_REFRESH_MS);return()=>clearInterval(id)},[load]);
   useEffect(()=>()=>{window.clearTimeout(timer.current);searchVersion.current++},[]);
   const search=(value:string)=>{
     setQ(value);

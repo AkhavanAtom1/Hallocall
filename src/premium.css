@@ -957,6 +957,71 @@ button:focus-visible, input:focus-visible { outline: 2px solid rgba(103, 232, 24
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* ── direct invite link: copy-only (no share sheet) ── */
+.invite-bar {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: min(1180px, calc(100% - 32px));
+  margin: 12px auto 0;
+  padding: 10px 14px;
+  border-radius: 18px;
+  border: 1px solid var(--line2);
+  background: linear-gradient(180deg, rgba(20, 25, 44, .55), rgba(10, 13, 24, .65));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06);
+}
+:root.light .invite-bar { background: #ffffff; }
+.invite-link-icon {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  color: #67e8f9;
+  background: rgba(34, 211, 238, .12);
+  box-shadow: inset 0 0 0 1px rgba(34, 211, 238, .22);
+}
+.invite-link-copy { display: grid; gap: 2px; min-width: 0; }
+.invite-link-copy b { font-size: 11px; }
+.invite-link-copy small { color: var(--muted); font-size: 8.5px; line-height: 1.7; }
+.invite-link-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 9px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, .04);
+  color: #a5f3fc;
+  font-size: 11px;
+  letter-spacing: .01em;
+  direction: ltr;
+  text-overflow: ellipsis;
+}
+:root.light .invite-link-input { color: #0e7490; background: rgba(15, 23, 42, .04); }
+.invite-link-input:focus { outline: none; border-color: rgba(103, 232, 249, .55); box-shadow: 0 0 0 3px rgba(34, 211, 238, .12); }
+.invite-link-btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(103, 232, 249, .35);
+  background: linear-gradient(135deg, rgba(34, 211, 238, .22), rgba(124, 58, 237, .18));
+  color: #cffafe;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 150ms ease, box-shadow 150ms ease;
+}
+:root.light .invite-link-btn { color: #0e7490; }
+.invite-link-btn:hover { transform: translateY(-1px); box-shadow: 0 14px 30px -14px rgba(34, 211, 238, .65); }
+.invite-link-btn:active { transform: translateY(0); }
+
 .call-stage { isolation: isolate; }
 .call-stage:before { content: ""; position: absolute; inset: 4% 8% 18%; z-index: -1; border-radius: 50%; pointer-events: none; filter: blur(34px); background: radial-gradient(circle at 50% 36%, rgba(124, 58, 237, .16), transparent 30%), radial-gradient(circle at 50% 82%, rgba(34, 211, 238, .08), transparent 34%); animation: stageGlow 9s ease-in-out infinite alternate; }
 
@@ -1149,6 +1214,10 @@ button:focus-visible, input:focus-visible { outline: 2px solid rgba(103, 232, 24
   .call-code-chip { min-width: 0; padding: 8px; gap: 7px; }
   .call-code-chip span { display: none; }
   .call-code-chip strong { font-size: 12px; }
+  .invite-bar { width: calc(100% - 20px); flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .invite-link-copy { flex: 1 1 100%; }
+  .invite-link-input { flex: 1 1 0; padding: 8px 10px; font-size: 10px; }
+  .invite-link-btn { padding: 9px 11px; }
   .share-feedback { right: 40px; }
   .call-flow-note { gap: 5px; font-size: 8px; }
   .call-flow-note > i { width: 10px; }
