@@ -627,8 +627,22 @@ async function api(env: Env, req: Request): Promise<Response> {
     await env.HALLOCALL_DB.prepare(`INSERT INTO calls(id,code,host_id,name,status,created_at) VALUES(?1,?2,?3,?4,'waiting',?5)`).bind(id,code,auth.user.id,name,now()).run();
     return json({ call:{id,code,name,hostId:auth.user.id,status:"waiting",maxParticipants:MAX_CALL_PARTICIPANTS} });
   }
+  /* Incoming call requests MUST be handled before the /api/calls/:code lookup:
+     otherwise "incoming" would be read as a call code and the ringing invite
+     never reaches the friend being called. */
+  if (path === "/api/calls/incoming" && method === "GET") {
+    const auth = await requireUser(env,req); if ("response" in auth) return auth.response;
+    const cutoff = now() - 120_000;
+    await env.HALLOCALL_DB.prepare(`UPDATE call_invites SET status='expired',responded_at=?1 WHERE callee_id=?2 AND status='ringing' AND created_at<=?3`)
+      .bind(now(),auth.user.id,cutoff).run();
+    const rows = await env.HALLOCALL_DB.prepare(`SELECT i.id invite_id,c.code,c.name,u.id caller_id,u.username caller_username,u.avatar caller_avatar
+      FROM call_invites i JOIN calls c ON c.id=i.call_id JOIN users u ON u.id=i.caller_id WHERE i.callee_id=?1 AND i.status='ringing' AND c.status<>'ended' AND i.created_at>?2 ORDER BY i.created_at DESC LIMIT 8`)
+      .bind(auth.user.id,cutoff).all<{invite_id:string;code:string;name:string;caller_id:string;caller_username:string;caller_avatar:string}>();
+    return json({ calls:rows.results.map(r=>({inviteId:r.invite_id,code:r.code,name:r.name,caller:{id:r.caller_id,username:r.caller_username,avatar:r.caller_avatar}})) });
+  }
+  const RESERVED_CALL_ROUTES = new Set(["invite", "respond", "join", "leave", "incoming"]);
   const callMatch = path.match(/^\/api\/calls\/([^/]+)$/);
-  if (callMatch && method === "GET") {
+  if (callMatch && method === "GET" && !RESERVED_CALL_ROUTES.has(callMatch[1])) {
     const auth = await requireUser(env,req); if ("response" in auth) return auth.response;
     const code = decodeURIComponent(callMatch[1]).toUpperCase();
     const row = await env.HALLOCALL_DB.prepare(`SELECT id,code,name,host_id,status FROM calls WHERE code=?1 LIMIT 1`).bind(code).first<{id:string;code:string;name:string;host_id:string;status:string}>();
@@ -653,16 +667,6 @@ async function api(env: Env, req: Request): Promise<Response> {
       env.HALLOCALL_DB.prepare(`INSERT INTO call_invites(id,call_id,caller_id,callee_id,status,created_at) VALUES(?1,?2,?3,?4,'ringing',?5)`).bind(inviteId,callId,auth.user.id,friendId,now()),
     ]);
     return json({ inviteId, call:{id:callId,code,name,hostId:auth.user.id,status:"waiting",maxParticipants:MAX_CALL_PARTICIPANTS} });
-  }
-  if (path === "/api/calls/incoming" && method === "GET") {
-    const auth = await requireUser(env,req); if ("response" in auth) return auth.response;
-    const cutoff = now() - 120_000;
-    await env.HALLOCALL_DB.prepare(`UPDATE call_invites SET status='expired',responded_at=?1 WHERE callee_id=?2 AND status='ringing' AND created_at<=?3`)
-      .bind(now(),auth.user.id,cutoff).run();
-    const rows = await env.HALLOCALL_DB.prepare(`SELECT i.id invite_id,c.code,c.name,u.id caller_id,u.username caller_username,u.avatar caller_avatar
-      FROM call_invites i JOIN calls c ON c.id=i.call_id JOIN users u ON u.id=i.caller_id WHERE i.callee_id=?1 AND i.status='ringing' AND c.status<>'ended' AND i.created_at>?2 ORDER BY i.created_at DESC LIMIT 8`)
-      .bind(auth.user.id,cutoff).all<{invite_id:string;code:string;name:string;caller_id:string;caller_username:string;caller_avatar:string}>();
-    return json({ calls:rows.results.map(r=>({inviteId:r.invite_id,code:r.code,name:r.name,caller:{id:r.caller_id,username:r.caller_username,avatar:r.caller_avatar}})) });
   }
   if (path === "/api/calls/respond" && method === "POST") {
     const auth = await requireUser(env,req); if ("response" in auth) return auth.response;

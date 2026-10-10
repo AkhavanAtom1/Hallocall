@@ -90,7 +90,7 @@ export function CallPage({
   const [error, setError] = useState("");
   const [joined, setJoined] = useState(false);
   const [leaving, setLeaving] = useState(false);
-  const [shareNotice, setShareNotice] = useState("");
+  const [copyNotice, setCopyNotice] = useState("");
   const [chatOpen, setChatOpen] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [qualityOpen, setQualityOpen] = useState(false);
@@ -120,7 +120,7 @@ export function CallPage({
   const reconnectAttempt = useRef(0);
   const reconnectTimer = useRef<number | null>(null);
   const reconnectAllowed = useRef(false);
-  const shareTimer = useRef<number | null>(null);
+  const copyTimer = useRef<number | null>(null);
   const chatListRef = useRef<HTMLDivElement>(null);
   const reactionTimers = useRef(new Set<number>());
 
@@ -545,28 +545,26 @@ export function CallPage({
   }, []);
 
   useEffect(() => () => {
-    if (shareTimer.current !== null) window.clearTimeout(shareTimer.current);
+    if (copyTimer.current !== null) window.clearTimeout(copyTimer.current);
   }, []);
 
-  const showShareNotice = (message: string) => {
-    setShareNotice(message);
-    if (shareTimer.current !== null) window.clearTimeout(shareTimer.current);
-    shareTimer.current = window.setTimeout(() => setShareNotice(""), 2600);
+  const showCopyNotice = (message: string) => {
+    setCopyNotice(message);
+    if (copyTimer.current !== null) window.clearTimeout(copyTimer.current);
+    copyTimer.current = window.setTimeout(() => setCopyNotice(""), 2600);
   };
 
-  const shareCall = async () => {
-    const link = `${location.origin}/call/${encodeURIComponent(code)}`;
-    try {
-      if (navigator.share) {
-        await navigator.share({ title: call?.name ?? "HalloCall", text: "ورود به کال صوتی HalloCall", url: link });
-        showShareNotice("لینک ارسال شد");
-        return;
-      }
-    } catch (cause) {
-      if (cause instanceof DOMException && cause.name === "AbortError") return;
-    }
-    const copied = await copyText(link);
-    showShareNotice(copied ? "لینک کپی شد" : `کد ورود: ${code}`);
+  /** Direct invite URL: anyone opening it (after login) lands in this exact call. */
+  const inviteLink = `${location.origin}/call/${encodeURIComponent(code)}`;
+
+  const copyCode = async () => {
+    const copied = await copyText(code);
+    showCopyNotice(copied ? "کد ورود کپی شد" : `کد ورود: ${code}`);
+  };
+
+  const copyInviteLink = async () => {
+    const copied = await copyText(inviteLink);
+    showCopyNotice(copied ? "لینک مستقیم کپی شد — هرکس بازش کند وارد همین تماس می‌شود" : inviteLink);
   };
 
   const toggleMute = () => {
@@ -649,10 +647,10 @@ export function CallPage({
             <AppAvatar size={38} className="brand-avatar" />
             <div><b>{call?.name ?? "Friend Call"}</b><span dir="ltr">#{code}</span></div>
           </div>
-          <button className="call-code-chip" onClick={shareCall} title="کپی یا اشتراک‌گذاری لینک کال">
-            <span>کد ورود</span><strong dir="ltr">{code}</strong><Icon name={shareNotice ? "check" : "copy"} size={15} />
+          <button className="call-code-chip" onClick={copyCode} title="کپی کد ورود">
+            <span>کد ورود</span><strong dir="ltr">{code}</strong><Icon name={copyNotice ? "check" : "copy"} size={15} />
           </button>
-          {shareNotice && <span className="share-feedback" role="status">{shareNotice}</span>}
+          {copyNotice && <span className="share-feedback" role="status">{copyNotice}</span>}
         </div>
         <div className="call-center-status" aria-live="polite">
           <span className={connection === "connected" ? "live-dot" : "live-dot warn"} />
@@ -666,6 +664,26 @@ export function CallPage({
         </div>
       </header>
 
+      <div className="invite-bar glass" role="region" aria-label="لینک مستقیم ورود به تماس">
+        <span className="invite-link-icon" aria-hidden="true"><Icon name="link" size={16} /></span>
+        <div className="invite-link-copy">
+          <b>لینک مستقیم ورود به این تماس</b>
+          <small>این لینک را کپی کن و به هر کسی بده؛ با کلیک روی آن مستقیم وارد همین تماس می‌شود.</small>
+        </div>
+        <input
+          className="invite-link-input"
+          readOnly
+          value={inviteLink}
+          dir="ltr"
+          aria-label="لینک مستقیم ورود به تماس"
+          onFocus={(event) => event.target.select()}
+          onClick={(event) => event.currentTarget.select()}
+        />
+        <button className="invite-link-btn" onClick={copyInviteLink} title="کپی لینک مستقیم">
+          <Icon name={copyNotice ? "check" : "copy"} size={15} /> کپی لینک
+        </button>
+      </div>
+
       <section className="call-stage" aria-label="شرکت‌کنندگان تماس">
         <div className={`participant-stage count-${Math.min(participants.length, MAX_CALL_PARTICIPANTS)}`}>
           {participants.map((participant) => <ParticipantTile key={participant.id} participant={participant} self={participant.id === user.id} hostId={call?.hostId} />)}
@@ -673,7 +691,7 @@ export function CallPage({
         {reactions.map((reaction) => <span key={reaction.id} className="reaction-float" style={{ left: `${reaction.x}%` }} aria-hidden="true">{reaction.emoji}</span>)}
         {!participants.length && <div className="joining" role="status"><span className="spinner" /><p>در حال ورود به کال و آماده‌سازی میکروفون…</p></div>}
         {playbackBlocked && <button className="audio-unlock glass" onClick={enablePlayback}><Icon name="volume" size={17} /> فعال‌کردن صدای دریافتی</button>}
-        {participants.length > 0 && participants.length < maxParticipants && <div className="waiting-pill glass"><span className="waiting-dot" /> ظرفیت تماس {maxParticipants - participants.length} نفر دیگر دارد — کد بالا را برای دوستانت بفرست.</div>}
+        {participants.length > 0 && participants.length < maxParticipants && <div className="waiting-pill glass"><span className="waiting-dot" /> ظرفیت تماس {maxParticipants - participants.length} نفر دیگر دارد — لینک مستقیم بالا را برای دوستانت بفرست تا وارد همین تماس شوند.</div>}
         {participants.length >= maxParticipants && <div className="waiting-pill glass"><span className="waiting-dot" /> این تماس به حداکثر ظرفیت {maxParticipants} نفر رسیده است.</div>}
       </section>
 
