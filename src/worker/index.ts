@@ -94,6 +94,8 @@ function likeContains(value: string) {
 
 const SESSION_COOKIE = "hallocall_session";
 
+const PRESENCE_WRITE_INTERVAL_MS = 10_000;
+
 type SessionRecord = {
   token: string;
   tokenHash: string;
@@ -215,7 +217,12 @@ type AuthResult = { response: Response } | { user: SafeUser };
 async function requireUser(env: Env, req: Request): Promise<AuthResult> {
   const user = await currentUser(env, req);
   if (!user) return { response: json({ error: "ابتدا وارد حساب شوید." }, { status: 401 }) };
-  await env.HALLOCALL_DB.prepare(`UPDATE users SET last_seen_at=?1 WHERE id=?2`).bind(now(), user.id).run();
+  /* Presence is written at most every 10 s. The UI polls every 1.5 s, so an
+     unthrottled write per request would hammer D1 for nothing; the 20 s online
+     window still sees a fresh timestamp well within its limit. */
+  const current = now();
+  await env.HALLOCALL_DB.prepare(`UPDATE users SET last_seen_at=?1 WHERE id=?2 AND last_seen_at<?3`)
+    .bind(current, user.id, current - PRESENCE_WRITE_INTERVAL_MS).run();
   return { user };
 }
 function safeUser(row: { id: string; username: string; avatar: string }): SafeUser { return { id: row.id, username: row.username, avatar: row.avatar }; }

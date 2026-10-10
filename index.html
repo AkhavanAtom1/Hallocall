@@ -13,8 +13,8 @@
         root.classList.toggle("dark", mode !== "light");
         root.style.colorScheme = mode === "light" ? "light" : "dark";
         const palette = localStorage.getItem("hallocall-color-theme");
-        const allowed = ["violet", "ocean", "rose", "emerald", "sunset", "special"];
-        root.dataset.colorTheme = allowed.includes(palette) ? palette : "violet";
+        const allowed = ["special", "sunny", "candy", "tropical", "carnival", "spring", "violet", "ocean", "rose", "emerald", "sunset"];
+        root.dataset.colorTheme = allowed.includes(palette) ? palette : "special";
       } catch {}
     </script>
     <link rel="icon" type="image/webp" href="/avatars/hallocall.webp" />

@@ -1,7 +1,18 @@
 /*
- * HalloCall color palettes. This file is loaded last so a selection updates the
- * whole app (surfaces, focus rings, buttons, ambient lighting and call controls)
- * without changing semantic status colors such as online, mute, accept or decline.
+ * HalloCall colour palettes. Loaded last so a selection updates the whole app
+ * (surfaces, focus rings, buttons, ambient lighting and call controls) without
+ * touching semantic status colours such as online, mute, accept or decline.
+ *
+ * Every palette defines the same set of tokens:
+ *   primary / secondary / tertiary / warm  → the four "house lights"
+ *   *-bright                                → lighter text & highlight tints
+ *   button-start / button-end               → white-label button gradient
+ *   ink                                     → accent text on LIGHT backgrounds
+ *                                             (darker, so it stays readable)
+ *
+ * «مخصوص» (special) is the default. Its four lights are also rewritten every
+ * ~0.6 s by src/lib/specialPalette.ts, which is why the special block below
+ * only uses var() references for anything derived.
  */
 :root {
   --theme-primary: #8b5cf6;
@@ -16,6 +27,7 @@
   --theme-tertiary-rgb: 244, 114, 182;
   --theme-warm: #fbbf24;
   --theme-warm-rgb: 251, 191, 36;
+  --theme-ink: #6d28d9;
   --theme-button-start: #6d28d9;
   --theme-button-end: #0e7490;
   --theme-button-gradient: linear-gradient(125deg, var(--theme-button-start), var(--theme-button-end));
@@ -29,6 +41,142 @@
   --neon-cyan: var(--theme-secondary);
 }
 
+/* ── «مخصوص»: default, slowly drifting signature palette ───────────────── */
+:root[data-color-theme="special"] {
+  --theme-primary: #8b5cf6;
+  --theme-primary-bright: #c4b5fd;
+  --theme-primary-rgb: 139, 92, 246;
+  --theme-primary-bright-rgb: 196, 181, 253;
+  --theme-secondary: #22d3ee;
+  --theme-secondary-bright: #67e8f9;
+  --theme-secondary-rgb: 34, 211, 238;
+  --theme-secondary-bright-rgb: 103, 232, 249;
+  --theme-tertiary: #f472b6;
+  --theme-tertiary-rgb: 244, 114, 182;
+  --theme-warm: #fbbf24;
+  --theme-warm-rgb: 251, 191, 36;
+  --theme-button-start: #6d28d9;
+  --theme-button-end: #0e7490;
+  --theme-button-mid: #9d174d;
+  --theme-button-warm: #a16207;
+  --theme-button-gradient: linear-gradient(108deg, var(--theme-button-start) 0%, var(--theme-button-end) 40%, var(--theme-button-mid) 72%, var(--theme-button-warm) 100%);
+  --theme-glow: rgba(var(--theme-primary-rgb), .58);
+  --theme-wash: linear-gradient(112deg, var(--theme-primary) 0%, var(--theme-secondary) 38%, var(--theme-tertiary) 72%, var(--theme-warm) 100%);
+  --theme-text-gradient: linear-gradient(112deg, var(--theme-primary-bright) 0%, var(--theme-secondary-bright) 38%, color-mix(in srgb, var(--theme-tertiary) 55%, white) 72%, color-mix(in srgb, var(--theme-warm) 60%, white) 100%);
+  --theme-ink: var(--theme-primary);
+}
+
+/* ── شاد و پرنور ──────────────────────────────────────────────────────── */
+:root[data-color-theme="sunny"] {
+  --theme-primary: #f59e0b;
+  --theme-primary-bright: #fcd34d;
+  --theme-primary-rgb: 245, 158, 11;
+  --theme-primary-bright-rgb: 252, 211, 77;
+  --theme-secondary: #fb7185;
+  --theme-secondary-bright: #fda4af;
+  --theme-secondary-rgb: 251, 113, 133;
+  --theme-secondary-bright-rgb: 253, 164, 175;
+  --theme-tertiary: #facc15;
+  --theme-tertiary-rgb: 250, 204, 21;
+  --theme-warm: #fb923c;
+  --theme-warm-rgb: 251, 146, 60;
+  --theme-ink: #b45309;
+  --theme-button-start: #b45309;
+  --theme-button-end: #be123c;
+  --theme-glow: rgba(245, 158, 11, .5);
+  --theme-wash: linear-gradient(112deg, #f59e0b 0%, #fb7185 55%, #facc15 100%);
+  --theme-text-gradient: linear-gradient(120deg, #fde68a, #fecdd3 72%);
+}
+
+:root[data-color-theme="candy"] {
+  --theme-primary: #ec4899;
+  --theme-primary-bright: #f9a8d4;
+  --theme-primary-rgb: 236, 72, 153;
+  --theme-primary-bright-rgb: 249, 168, 212;
+  --theme-secondary: #38bdf8;
+  --theme-secondary-bright: #7dd3fc;
+  --theme-secondary-rgb: 56, 189, 248;
+  --theme-secondary-bright-rgb: 125, 211, 252;
+  --theme-tertiary: #5eead4;
+  --theme-tertiary-rgb: 94, 234, 212;
+  --theme-warm: #c084fc;
+  --theme-warm-rgb: 192, 132, 252;
+  --theme-ink: #be185d;
+  --theme-button-start: #be185d;
+  --theme-button-end: #0369a1;
+  --theme-glow: rgba(236, 72, 153, .5);
+  --theme-wash: linear-gradient(112deg, #ec4899 0%, #38bdf8 58%, #5eead4 100%);
+  --theme-text-gradient: linear-gradient(120deg, #fbcfe8, #bae6fd 72%);
+}
+
+:root[data-color-theme="tropical"] {
+  --theme-primary: #14b8a6;
+  --theme-primary-bright: #5eead4;
+  --theme-primary-rgb: 20, 184, 166;
+  --theme-primary-bright-rgb: 94, 234, 212;
+  --theme-secondary: #84cc16;
+  --theme-secondary-bright: #bef264;
+  --theme-secondary-rgb: 132, 204, 22;
+  --theme-secondary-bright-rgb: 190, 242, 100;
+  --theme-tertiary: #fb7185;
+  --theme-tertiary-rgb: 251, 113, 133;
+  --theme-warm: #fde047;
+  --theme-warm-rgb: 253, 224, 71;
+  --theme-ink: #0f766e;
+  --theme-button-start: #0f766e;
+  --theme-button-end: #4d7c0f;
+  --theme-glow: rgba(20, 184, 166, .48);
+  --theme-wash: linear-gradient(112deg, #14b8a6 0%, #84cc16 58%, #fb7185 100%);
+  --theme-text-gradient: linear-gradient(120deg, #99f6e4, #d9f99d 72%);
+}
+
+:root[data-color-theme="carnival"] {
+  --theme-primary: #d946ef;
+  --theme-primary-bright: #f0abfc;
+  --theme-primary-rgb: 217, 70, 239;
+  --theme-primary-bright-rgb: 240, 171, 252;
+  --theme-secondary: #06b6d4;
+  --theme-secondary-bright: #67e8f9;
+  --theme-secondary-rgb: 6, 182, 212;
+  --theme-secondary-bright-rgb: 103, 232, 249;
+  --theme-tertiary: #facc15;
+  --theme-tertiary-rgb: 250, 204, 21;
+  --theme-warm: #fb923c;
+  --theme-warm-rgb: 251, 146, 60;
+  --theme-ink: #a21caf;
+  --theme-button-start: #a21caf;
+  --theme-button-end: #0e7490;
+  --theme-glow: rgba(217, 70, 239, .5);
+  --theme-wash: linear-gradient(112deg, #d946ef 0%, #06b6d4 55%, #facc15 100%);
+  --theme-text-gradient: linear-gradient(120deg, #f5d0fe, #a5f3fc 72%);
+}
+
+:root[data-color-theme="spring"] {
+  --theme-primary: #22c55e;
+  --theme-primary-bright: #86efac;
+  --theme-primary-rgb: 34, 197, 94;
+  --theme-primary-bright-rgb: 134, 239, 172;
+  --theme-secondary: #f472b6;
+  --theme-secondary-bright: #fbcfe8;
+  --theme-secondary-rgb: 244, 114, 182;
+  --theme-secondary-bright-rgb: 251, 207, 232;
+  --theme-tertiary: #60a5fa;
+  --theme-tertiary-rgb: 96, 165, 250;
+  --theme-warm: #fde047;
+  --theme-warm-rgb: 253, 224, 71;
+  --theme-ink: #15803d;
+  --theme-button-start: #15803d;
+  --theme-button-end: #be185d;
+  --theme-glow: rgba(34, 197, 94, .48);
+  --theme-wash: linear-gradient(112deg, #22c55e 0%, #f472b6 58%, #60a5fa 100%);
+  --theme-text-gradient: linear-gradient(120deg, #bbf7d0, #fbcfe8 72%);
+}
+
+/* ── کلاسیک ───────────────────────────────────────────────────────────── */
+:root[data-color-theme="violet"] {
+  --theme-ink: #6d28d9;
+}
+
 :root[data-color-theme="ocean"] {
   --theme-primary: #0ea5e9;
   --theme-primary-bright: #7dd3fc;
@@ -40,6 +188,9 @@
   --theme-secondary-bright-rgb: 94, 234, 212;
   --theme-tertiary: #38bdf8;
   --theme-tertiary-rgb: 56, 189, 248;
+  --theme-warm: #67e8f9;
+  --theme-warm-rgb: 103, 232, 249;
+  --theme-ink: #0369a1;
   --theme-button-start: #0369a1;
   --theme-button-end: #0f766e;
   --theme-glow: rgba(14, 165, 233, .48);
@@ -57,6 +208,9 @@
   --theme-secondary-bright-rgb: 196, 181, 253;
   --theme-tertiary: #22d3ee;
   --theme-tertiary-rgb: 34, 211, 238;
+  --theme-warm: #f9a8d4;
+  --theme-warm-rgb: 249, 168, 212;
+  --theme-ink: #be185d;
   --theme-button-start: #be185d;
   --theme-button-end: #6d28d9;
   --theme-glow: rgba(219, 39, 119, .5);
@@ -75,6 +229,9 @@
   --theme-secondary-bright-rgb: 103, 232, 249;
   --theme-tertiary: #84cc16;
   --theme-tertiary-rgb: 132, 204, 22;
+  --theme-warm: #fde68a;
+  --theme-warm-rgb: 253, 230, 138;
+  --theme-ink: #047857;
   --theme-button-start: #047857;
   --theme-button-end: #0e7490;
   --theme-glow: rgba(16, 185, 129, .48);
@@ -93,6 +250,9 @@
   --theme-secondary-bright-rgb: 253, 164, 175;
   --theme-tertiary: #fbbf24;
   --theme-tertiary-rgb: 251, 191, 36;
+  --theme-warm: #fb923c;
+  --theme-warm-rgb: 251, 146, 60;
+  --theme-ink: #c2410c;
   --theme-button-start: #c2410c;
   --theme-button-end: #be123c;
   --theme-glow: rgba(234, 88, 12, .5);
@@ -100,28 +260,8 @@
   --theme-text-gradient: linear-gradient(120deg, #fed7aa, #fecdd3 72%);
 }
 
-:root[data-color-theme="special"] {
-  --theme-primary: #8b5cf6;
-  --theme-primary-bright: #c4b5fd;
-  --theme-primary-rgb: 139, 92, 246;
-  --theme-primary-bright-rgb: 196, 181, 253;
-  --theme-secondary: #22d3ee;
-  --theme-secondary-bright: #67e8f9;
-  --theme-secondary-rgb: 34, 211, 238;
-  --theme-secondary-bright-rgb: 103, 232, 249;
-  --theme-tertiary: #f472b6;
-  --theme-tertiary-rgb: 244, 114, 182;
-  --theme-warm: #fbbf24;
-  --theme-warm-rgb: 251, 191, 36;
-  --theme-button-start: #6d28d9;
-  --theme-button-end: #0e7490;
-  --theme-button-gradient: linear-gradient(108deg, #6d28d9 0%, #0e7490 38%, #be185d 72%, #a16207 100%);
-  --theme-glow: rgba(139, 92, 246, .58);
-  --theme-wash: linear-gradient(112deg, #8b5cf6 0%, #22d3ee 38%, #f472b6 72%, #fbbf24 100%);
-  --theme-text-gradient: linear-gradient(112deg, #c4b5fd 0%, #67e8f9 38%, #f9a8d4 72%, #fde68a 100%);
-}
-
-/* Static ambient lighting keeps the richer palettes lightweight in a call. */
+/* ── ambient lighting shared by every palette ─────────────────────────── */
+/* Static on purpose (no animation): four lights painted per palette. */
 body {
   background: #04060d;
   color: var(--text);
@@ -130,20 +270,23 @@ body {
   background:
     radial-gradient(58rem 38rem at 8% -12%, rgba(var(--theme-primary-rgb), .19), transparent 62%),
     radial-gradient(52rem 36rem at 100% 105%, rgba(var(--theme-secondary-rgb), .12), transparent 60%),
-    radial-gradient(32rem 26rem at 78% 16%, rgba(var(--theme-tertiary-rgb), .07), transparent 68%),
+    radial-gradient(34rem 26rem at 78% 16%, rgba(var(--theme-tertiary-rgb), .08), transparent 68%),
+    radial-gradient(30rem 24rem at 10% 84%, rgba(var(--theme-warm-rgb), .07), transparent 70%),
     #04060d;
 }
 .scene::before {
   background:
-    radial-gradient(38rem 22rem at 24% 8%, rgba(var(--theme-primary-rgb), .20), transparent 70%),
-    radial-gradient(34rem 20rem at 82% 2%, rgba(var(--theme-secondary-rgb), .14), transparent 72%),
-    radial-gradient(28rem 18rem at 72% 18%, rgba(var(--theme-tertiary-rgb), .09), transparent 74%);
+    radial-gradient(38rem 22rem at 24% 8%, rgba(var(--theme-primary-rgb), .22), transparent 70%),
+    radial-gradient(34rem 20rem at 82% 2%, rgba(var(--theme-secondary-rgb), .15), transparent 72%),
+    radial-gradient(28rem 18rem at 65% 25%, rgba(var(--theme-tertiary-rgb), .12), transparent 72%),
+    radial-gradient(24rem 18rem at 15% 52%, rgba(var(--theme-warm-rgb), .09), transparent 72%);
 }
 .scene-call::before {
   background:
     radial-gradient(36rem 20rem at 50% 0%, rgba(var(--theme-primary-rgb), .19), transparent 72%),
     radial-gradient(30rem 18rem at 12% 22%, rgba(var(--theme-secondary-rgb), .12), transparent 74%),
-    radial-gradient(26rem 18rem at 88% 16%, rgba(var(--theme-tertiary-rgb), .09), transparent 74%);
+    radial-gradient(26rem 18rem at 88% 16%, rgba(var(--theme-tertiary-rgb), .10), transparent 74%),
+    radial-gradient(22rem 16rem at 80% 88%, rgba(var(--theme-warm-rgb), .08), transparent 74%);
 }
 .call-page {
   background:
@@ -155,9 +298,9 @@ body {
 :root.light body { background: #f2f5fb; }
 :root.light .app-bg {
   background:
-    radial-gradient(58rem 38rem at 8% -12%, rgba(var(--theme-primary-rgb), .11), transparent 62%),
-    radial-gradient(52rem 36rem at 100% 105%, rgba(var(--theme-secondary-rgb), .08), transparent 60%),
-    radial-gradient(32rem 26rem at 78% 16%, rgba(var(--theme-tertiary-rgb), .055), transparent 68%),
+    radial-gradient(58rem 38rem at 8% -12%, rgba(var(--theme-primary-rgb), .12), transparent 62%),
+    radial-gradient(52rem 36rem at 100% 105%, rgba(var(--theme-secondary-rgb), .09), transparent 60%),
+    radial-gradient(32rem 26rem at 78% 16%, rgba(var(--theme-tertiary-rgb), .06), transparent 68%),
     #f2f5fb;
 }
 :root.light .call-page {
@@ -168,6 +311,14 @@ body {
 }
 :root.light .glass:after {
   background: linear-gradient(125deg, rgba(255, 255, 255, .86), transparent 22% 78%, rgba(var(--theme-primary-rgb), .065));
+}
+
+/* Coloured rim light along the top edge of dark glass panels. */
+:root:not(.light) .glass {
+  box-shadow:
+    0 22px 55px rgba(2, 4, 12, .42),
+    0 0 0 1px rgba(var(--theme-primary-rgb), .07),
+    inset 0 1px 0 rgba(var(--theme-primary-bright-rgb), .2);
 }
 
 ::selection { background: rgba(var(--theme-primary-rgb), .38); color: #fff; }
@@ -216,31 +367,6 @@ input:focus-visible,
   background: linear-gradient(135deg, rgba(var(--theme-primary-rgb), .38), rgba(var(--theme-secondary-rgb), .17));
 }
 .chat-msg.mine p { background: linear-gradient(135deg, rgba(var(--theme-primary-rgb), .22), rgba(var(--theme-secondary-rgb), .09)); }
-
-/* The signature palette deliberately uses all four house lights at once. */
-:root[data-color-theme="special"] .app-bg {
-  background:
-    radial-gradient(58rem 38rem at 8% -12%, rgba(139, 92, 246, .20), transparent 62%),
-    radial-gradient(52rem 36rem at 100% 105%, rgba(34, 211, 238, .14), transparent 60%),
-    radial-gradient(34rem 24rem at 78% 15%, rgba(244, 114, 182, .13), transparent 70%),
-    radial-gradient(30rem 24rem at 12% 80%, rgba(251, 191, 36, .075), transparent 72%),
-    #04060d;
-}
-:root[data-color-theme="special"] .scene::before {
-  background:
-    radial-gradient(38rem 22rem at 24% 8%, rgba(139, 92, 246, .22), transparent 70%),
-    radial-gradient(34rem 20rem at 82% 2%, rgba(34, 211, 238, .15), transparent 72%),
-    radial-gradient(28rem 18rem at 65% 25%, rgba(244, 114, 182, .14), transparent 72%),
-    radial-gradient(24rem 18rem at 15% 52%, rgba(251, 191, 36, .08), transparent 72%);
-}
-:root.light[data-color-theme="special"] .app-bg {
-  background:
-    radial-gradient(58rem 38rem at 8% -12%, rgba(139, 92, 246, .12), transparent 62%),
-    radial-gradient(52rem 36rem at 100% 105%, rgba(34, 211, 238, .09), transparent 60%),
-    radial-gradient(34rem 24rem at 78% 15%, rgba(244, 114, 182, .08), transparent 70%),
-    radial-gradient(30rem 24rem at 12% 80%, rgba(251, 191, 36, .055), transparent 72%),
-    #f2f5fb;
-}
 
 /* Palette selector and the light/dark switch in the app's top bar. */
 .theme-controls {
@@ -312,8 +438,10 @@ input:focus-visible,
   inset-inline-end: 0;
   z-index: 180;
   width: min(340px, calc(100vw - 28px));
+  max-height: min(72vh, 560px);
   padding: 10px;
-  overflow: visible;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border-radius: 19px;
   background: linear-gradient(158deg, rgba(20, 25, 44, .99), rgba(10, 13, 24, .99));
   border-color: rgba(var(--theme-primary-rgb), .2);
@@ -322,6 +450,14 @@ input:focus-visible,
 .theme-menu-heading { display: grid; gap: 2px; padding: 4px 7px 9px; }
 .theme-menu-heading b { font-size: 12px; }
 .theme-menu-heading span { color: var(--muted); font-size: 9px; }
+.theme-group { display: grid; gap: 4px; margin-bottom: 6px; }
+.theme-group-label {
+  padding: 8px 8px 2px;
+  color: var(--theme-primary-bright);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .08em;
+}
 .theme-option {
   width: 100%;
   min-height: 52px;
@@ -364,18 +500,19 @@ input:focus-visible,
   border-color: rgba(var(--theme-primary-rgb), .2);
   box-shadow: 0 24px 62px rgba(45, 66, 110, .2), 0 0 32px -14px var(--theme-glow);
 }
+:root.light .theme-group-label { color: var(--theme-ink); }
 :root.light .theme-option:hover,
 :root.light .theme-option.selected { background: linear-gradient(100deg, rgba(var(--theme-primary-rgb), .09), rgba(var(--theme-secondary-rgb), .06)); }
 :root.light .nav-item.active { color: #172033; }
-:root.light .nav-item.active .nav-icon { color: var(--theme-primary); }
-:root.light .call-toolbar .tool-circle.active { color: var(--theme-primary); }
+:root.light .nav-item.active .nav-icon { color: var(--theme-ink); }
+:root.light .call-toolbar .tool-circle.active { color: var(--theme-ink); }
 :root.light .participant-card.self .participant-name b,
 :root.light .text-btn,
-:root.light .stat-card button { color: var(--theme-primary); }
+:root.light .stat-card button { color: var(--theme-ink); }
 :root.light .chat-msg.mine p { color: #20283a; }
 :root.light .quality-number,
 :root.light .quality-value,
-:root.light .quality-slider strong { color: var(--theme-primary); }
+:root.light .quality-slider strong { color: var(--theme-ink); }
 
 @media (max-width: 760px) {
   .auth-theme-controls { top: 14px; right: 14px; }
