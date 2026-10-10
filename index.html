@@ -5,6 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#04060d" />
     <meta name="description" content="HalloCall — تماس صوتی ساده و سریع با دوستان" />
+    <script>
+      try {
+        const root = document.documentElement;
+        const mode = localStorage.getItem("hallocall-theme");
+        root.classList.toggle("light", mode === "light");
+        root.classList.toggle("dark", mode !== "light");
+        root.style.colorScheme = mode === "light" ? "light" : "dark";
+        const palette = localStorage.getItem("hallocall-color-theme");
+        const allowed = ["violet", "ocean", "rose", "emerald", "sunset", "special"];
+        root.dataset.colorTheme = allowed.includes(palette) ? palette : "violet";
+      } catch {}
+    </script>
     <link rel="icon" type="image/webp" href="/avatars/hallocall.webp" />
     <link rel="apple-touch-icon" href="/avatars/hallocall.webp" />
     <link rel="mask-icon" href="/avatars/hallocall.webp" color="#8b5cf6" />

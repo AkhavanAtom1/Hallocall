@@ -67,3 +67,13 @@ in `src/lite.css`, the last stylesheet in the cascade.
 
 Layout rules that come with it: bottom navigation + bottom-sheet chat on phones,
 `env(safe-area-inset-*)` padding for notched devices, and 44px+ tap targets.
+
+## Appearance and themes
+
+The color palette is a browser preference (separate from light/dark mode), not
+account data. `src/lib/theme.ts` defines the six named palettes and `src/theme.css`
+maps them to shared design tokens. The selected palette is stored in local
+storage and applied on the document root before the app renders, avoiding a
+flash of the default colors. The signature **Special** palette blends violet,
+aqua, rose and gold while keeping status colors (online, mute, accept/decline)
+semantically recognizable.

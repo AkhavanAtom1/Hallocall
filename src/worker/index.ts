@@ -612,9 +612,22 @@ async function api(env: Env, req: Request): Promise<Response> {
     if (!target) return json({ error:"کاربر پیدا نشد." }, { status:404 });
     const existing = await friendshipBetween(env,auth.user.id,userId);
     if (existing?.status === "accepted") return json({ error:"این کاربر از قبل دوست شماست." }, { status:409 });
-    if (existing?.status === "pending") return json({ error:"درخواست دوستی از قبل ارسال شده است." }, { status:409 });
+    if (existing?.status === "pending") return json({ error:existing.requester_id===auth.user.id?"درخواست دوستی از قبل ارسال شده است.":"این کاربر برای شما درخواست فرستاده است." }, { status:409 });
     if (existing) await env.HALLOCALL_DB.prepare(`DELETE FROM friendships WHERE id=?1`).bind(existing.id).run();
-    await env.HALLOCALL_DB.prepare(`INSERT INTO friendships(id,requester_id,addressee_id,status,created_at) VALUES(?1,?2,?3,'pending',?4)`).bind(uuid(),auth.user.id,userId,now()).run();
+    /* The symmetric NOT EXISTS check is part of the insert itself, so two
+       opposite-direction requests submitted at the same time cannot create
+       duplicate pending relationships. */
+    const inserted = await env.HALLOCALL_DB.prepare(`INSERT INTO friendships(id,requester_id,addressee_id,status,created_at)
+      SELECT ?1,?2,?3,'pending',?4 WHERE NOT EXISTS (
+        SELECT 1 FROM friendships WHERE (requester_id=?2 AND addressee_id=?3) OR (requester_id=?3 AND addressee_id=?2)
+      )`).bind(uuid(),auth.user.id,userId,now()).run();
+    if (!inserted.meta.changes) {
+      const raced = await friendshipBetween(env,auth.user.id,userId);
+      const message = raced?.status==="accepted" ? "این کاربر از قبل دوست شماست."
+        : raced?.status==="pending" && raced.requester_id!==auth.user.id ? "این کاربر برای شما درخواست فرستاده است."
+        : "درخواست دوستی از قبل ارسال شده است.";
+      return json({ error:message }, { status:409 });
+    }
     return json({ ok:true });
   }
   if (path === "/api/friends/respond" && method === "POST") {
@@ -693,15 +706,20 @@ async function api(env: Env, req: Request): Promise<Response> {
     if (!id || !action) return json({ error:"درخواست نامعتبر است." }, { status:400 });
     const row = await env.HALLOCALL_DB.prepare(`SELECT i.id,c.code,c.status call_status,i.callee_id,i.call_id,i.status invite_status FROM call_invites i JOIN calls c ON c.id=i.call_id WHERE i.id=?1 LIMIT 1`).bind(id).first<{id:string;code:string;call_status:string;callee_id:string;call_id:string;invite_status:string}>();
     if (!row || row.callee_id!==auth.user.id || row.invite_status!=="ringing" || row.call_status==="ended") return json({ error:"این تماس دیگر در دسترس نیست." }, { status:409 });
-    await env.HALLOCALL_DB.prepare(`UPDATE call_invites SET status=?1,responded_at=?2 WHERE id=?3 AND status='ringing'`).bind(action,now(),id).run();
+    const respondedAt = now();
+    const updated = await env.HALLOCALL_DB.prepare(`UPDATE call_invites SET status=?1,responded_at=?2 WHERE id=?3 AND callee_id=?4 AND status='ringing' AND EXISTS (SELECT 1 FROM calls WHERE id=call_invites.call_id AND status<>'ended')`)
+      .bind(action,respondedAt,id,auth.user.id).run();
+    if (!updated.meta.changes) return json({ error:"این تماس دیگر در دسترس نیست." }, { status:409 });
     if (action === "accepted") {
-      const t = now();
-      await env.HALLOCALL_DB.batch([
-        env.HALLOCALL_DB.prepare(`UPDATE calls SET status='active' WHERE id=?1 AND status<>'ended'`).bind(row.call_id),
-        env.HALLOCALL_DB.prepare(`UPDATE call_invites SET status='expired',responded_at=?1 WHERE callee_id=?2 AND status='ringing' AND id<>?3`).bind(t,auth.user.id,id),
-      ]);
+      const activated = await env.HALLOCALL_DB.prepare(`UPDATE calls SET status='active' WHERE id=?1 AND status<>'ended'`).bind(row.call_id).run();
+      if (!activated.meta.changes) return json({ error:"این تماس دیگر در دسترس نیست." }, { status:409 });
+      await env.HALLOCALL_DB.prepare(`UPDATE call_invites SET status='expired',responded_at=?1 WHERE callee_id=?2 AND status='ringing' AND id<>?3`).bind(respondedAt,auth.user.id,id).run();
     } else {
-      await env.HALLOCALL_DB.prepare(`UPDATE calls SET status='ended',ended_at=?1 WHERE id=?2 AND status='waiting'`).bind(now(),row.call_id).run();
+      /* The caller joins immediately while the invite is ringing. End active
+         quick-call rooms too, so a decline cannot leave the caller stranded. */
+      await env.HALLOCALL_DB.prepare(`UPDATE calls SET status='ended',ended_at=?1 WHERE id=?2 AND status<>'ended'`).bind(respondedAt,row.call_id).run();
+      const roomId = env.CALL_ROOMS.idFromName(row.code);
+      try { await env.CALL_ROOMS.get(roomId).fetch(new Request("https://call-room.local/end")); } catch {}
     }
     return json({ ok:true, code:action === "accepted" ? row.code : undefined });
   }
@@ -762,6 +780,21 @@ export default {
     try {
       if (url.pathname.startsWith("/api/")) return await api(env,req);
       if (url.pathname.startsWith("/ws/call/")) {
+        const origin = req.headers.get("Origin");
+        if (origin) {
+          try {
+            const parsedOrigin = new URL(origin);
+            const forwardedHost = req.headers.get("x-forwarded-host")?.split(",")[0].trim();
+            const host = req.headers.get("host") || url.host;
+            const behindLocalProxy = ["localhost", "127.0.0.1", "::1"].includes(url.hostname);
+            const requestHost = behindLocalProxy ? (forwardedHost || host) : host;
+            const sameOrigin = parsedOrigin.host.toLowerCase() === requestHost.toLowerCase() &&
+              (behindLocalProxy && forwardedHost ? true : parsedOrigin.origin === url.origin);
+            if (!sameOrigin) return new Response("Forbidden", {status:403});
+          } catch {
+            return new Response("Forbidden", {status:403});
+          }
+        }
         const user = await currentUser(env,req);
         if (!user) return new Response("Unauthorized", {status:401});
         const code = decodeURIComponent(url.pathname.split("/").pop() || "").toUpperCase();

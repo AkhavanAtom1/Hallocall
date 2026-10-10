@@ -63,7 +63,7 @@ html { scroll-behavior: auto; }
 
 /* translucent overlays stay readable without a blur pass */
 .modal-backdrop,
-.incoming-backdrop { background: radial-gradient(circle at 50% 42%, rgba(124, 58, 237, .16), rgba(4, 6, 13, .88)); }
+.incoming-backdrop { background: radial-gradient(circle at 50% 42%, rgba(var(--theme-primary-rgb), .16), rgba(4, 6, 13, .88)); }
 .toast, .waiting-pill { background: linear-gradient(158deg, rgba(20, 25, 44, .96), rgba(10, 13, 24, .98)); }
 :root.light .toast, :root.light .waiting-pill { background: #ffffff; }
 
@@ -125,8 +125,8 @@ body { background: #04060d; }
 
 .app-bg {
   background:
-    radial-gradient(60rem 40rem at 10% -10%, rgba(124, 58, 237, .22), transparent 58%),
-    radial-gradient(52rem 36rem at 100% 102%, rgba(6, 182, 212, .14), transparent 56%),
+    radial-gradient(60rem 40rem at 10% -10%, rgba(var(--theme-primary-rgb), .22), transparent 58%),
+    radial-gradient(52rem 36rem at 100% 102%, rgba(var(--theme-secondary-rgb), .14), transparent 56%),
     linear-gradient(180deg, #070a14, #04060d 62%);
 }
 
@@ -147,22 +147,22 @@ body { background: #04060d; }
   inset: -20% -10% auto -10%;
   height: 78vh;
   background:
-    radial-gradient(38rem 22rem at 24% 8%, rgba(139, 92, 246, .20), transparent 70%),
-    radial-gradient(34rem 20rem at 82% 2%, rgba(34, 211, 238, .13), transparent 72%);
+    radial-gradient(38rem 22rem at 24% 8%, rgba(var(--theme-primary-rgb), .20), transparent 70%),
+    radial-gradient(34rem 20rem at 82% 2%, rgba(var(--theme-secondary-rgb), .13), transparent 72%);
 }
 
 .scene-call::before {
   background:
-    radial-gradient(36rem 20rem at 50% 0%, rgba(139, 92, 246, .18), transparent 72%),
-    radial-gradient(30rem 18rem at 12% 22%, rgba(34, 211, 238, .10), transparent 74%);
+    radial-gradient(36rem 20rem at 50% 0%, rgba(var(--theme-primary-rgb), .18), transparent 72%),
+    radial-gradient(30rem 18rem at 12% 22%, rgba(var(--theme-secondary-rgb), .10), transparent 74%);
 }
 
 :root.light body { background: #f2f5fb; }
 :root.light .scene { display: none !important; }
 :root.light .app-bg {
   background:
-    radial-gradient(58rem 38rem at 8% -12%, rgba(124, 58, 237, .12), transparent 62%),
-    radial-gradient(52rem 36rem at 100% 105%, rgba(6, 182, 212, .10), transparent 60%),
+    radial-gradient(58rem 38rem at 8% -12%, rgba(var(--theme-primary-rgb), .12), transparent 62%),
+    radial-gradient(52rem 36rem at 100% 105%, rgba(var(--theme-secondary-rgb), .10), transparent 60%),
     #f2f5fb;
 }
 

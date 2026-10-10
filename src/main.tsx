@@ -4,6 +4,7 @@ import "./styles.css";
 import "./premium.css";
 import "./refinement.css";
 import "./lite.css";
+import "./theme.css";
 import { App } from "./App";
 
 createRoot(document.getElementById("root")!).render(

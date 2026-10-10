@@ -12,6 +12,9 @@ import { GlowButton } from "./components/GlowButton";
 import { Scene } from "./components/Scene";
 import { CALL_CODE_LENGTH, MAX_CALL_PARTICIPANTS } from "./lib/call";
 import { CallPage } from "./components/CallRoom";
+import { ThemeControls } from "./components/ThemeControls";
+import { COLOR_THEME_STORAGE_KEY, readSavedColorTheme } from "./lib/theme";
+import type { ColorThemeId } from "./lib/theme";
 
 type Route = { page:"login" } | { page:"dashboard" } | { page:"friends" } | { page:"profiles" } | { page:"calls" } | { page:"call"; code:string };
 
@@ -60,6 +63,7 @@ export function App() {
   const [user,setUser] = useState<User|null>(null);
   const [booting,setBooting] = useState(true);
   const [dark,setDark] = useState(()=>{ try { return localStorage.getItem("hallocall-theme") !== "light"; } catch { return true; } });
+  const [colorTheme,setColorTheme] = useState<ColorThemeId>(()=>readSavedColorTheme());
   const [incoming,setIncoming] = useState<IncomingCall|null>(null);
   const [incomingBusy,setIncomingBusy] = useState(false);
   const [profileOpen,setProfileOpen] = useState(false);
@@ -68,8 +72,13 @@ export function App() {
   useEffect(()=>{
     document.documentElement.classList.toggle("light",!dark);
     document.documentElement.classList.toggle("dark",dark);
+    document.documentElement.style.colorScheme = dark ? "dark" : "light";
     try { localStorage.setItem("hallocall-theme",dark?"dark":"light"); } catch {}
   },[dark]);
+  useEffect(()=>{
+    document.documentElement.dataset.colorTheme = colorTheme;
+    try { localStorage.setItem(COLOR_THEME_STORAGE_KEY,colorTheme); } catch {}
+  },[colorTheme]);
   useEffect(()=>{ let active=true; api.me().then((d)=>{if(active)setUser(d.user)}).catch(()=>{}).finally(()=>{if(active)setBooting(false)}); return()=>{active=false}; },[]);
   useEffect(()=>{ if(booting)return; if(user && route.page==="login")go(takeReturnPath() ?? "/dashboard"); else if(!user && route.page!=="login"){ if(route.page==="call")stashReturnPath(); go("/login"); } },[booting,user,route.page,go]);
   useEffect(()=>{ if (!user) return; api.touch().catch(()=>{}); const id=setInterval(()=>api.touch().catch(()=>{}),10000); return()=>clearInterval(id); },[user]);
@@ -93,17 +102,18 @@ export function App() {
     finally{setIncomingBusy(false)}
   };
 
+  const themeControls = <ThemeControls colorTheme={colorTheme} onColorThemeChange={setColorTheme} dark={dark} setDark={setDark}/>;
   if (booting) return <BootScreen dark={dark} />;
   const effectivePage = route.page === "login" && user ? "dashboard" : route.page;
-  if (!user) return <LoginPage onSuccess={signIn} dark={dark} setDark={setDark} />;
-  if (route.page==="call") return <CallPage key={route.code} user={user} code={route.code} go={go} dark={dark} setDark={setDark} />;
+  if (!user) return <LoginPage onSuccess={signIn} dark={dark} setDark={setDark} colorTheme={colorTheme} onColorThemeChange={setColorTheme}/>;
+  if (route.page==="call") return <CallPage key={route.code} user={user} code={route.code} go={go} dark={dark} setDark={setDark} colorTheme={colorTheme} onColorThemeChange={setColorTheme}/>;
 
   return <>
     <AppShell user={user} route={route} go={go} dark={dark} setDark={setDark} logout={logout} openProfile={()=>setProfileOpen(true)}>
-      {effectivePage==="dashboard" && <Dashboard user={user} go={go} onToast={setToast}/>}
-      {effectivePage==="friends" && <Friends user={user} go={go} onToast={setToast}/>}
-      {effectivePage==="profiles" && <Profiles user={user} onApply={applyAvatar}/>}
-      {effectivePage==="calls" && <Calls go={go} onToast={setToast}/>}
+      {effectivePage==="dashboard" && <Dashboard user={user} go={go} onToast={setToast} themeControls={themeControls}/>}
+      {effectivePage==="friends" && <Friends user={user} go={go} onToast={setToast} themeControls={themeControls}/>}
+      {effectivePage==="profiles" && <Profiles user={user} onApply={applyAvatar} themeControls={themeControls}/>}
+      {effectivePage==="calls" && <Calls go={go} onToast={setToast} themeControls={themeControls}/>}
     </AppShell>
     {incoming && <IncomingOverlay call={incoming} busy={incomingBusy} onAccept={()=>respondIncoming("accept")} onDecline={()=>respondIncoming("decline")} />}
     {profileOpen && <ProfileModal user={user} dark={dark} onToggleTheme={()=>setDark(!dark)} onLogout={logout} onClose={()=>setProfileOpen(false)} onApply={async(id)=>{ const ok=await applyAvatar(id); if(ok) setProfileOpen(false); return ok; }} />}
@@ -117,7 +127,7 @@ function BootScreen({dark}:{dark:boolean}) {
 
 /* ─────────────────────────── auth ─────────────────────────── */
 
-function LoginPage({onSuccess,dark,setDark}:{onSuccess:(u:User)=>void;dark:boolean;setDark:(v:boolean)=>void}) {
+function LoginPage({onSuccess,dark,setDark,colorTheme,onColorThemeChange}:{onSuccess:(u:User)=>void;dark:boolean;setDark:(v:boolean)=>void;colorTheme:ColorThemeId;onColorThemeChange:(theme:ColorThemeId)=>void}) {
   const [mode,setMode]=useState<"login"|"register">("login");
   const [username,setUsername]=useState("");
   const [password,setPassword]=useState("");
@@ -128,7 +138,7 @@ function LoginPage({onSuccess,dark,setDark}:{onSuccess:(u:User)=>void;dark:boole
 
   return <main className="auth-page app-bg">
     <Scene variant="auth"/>
-    <button className="icon-btn theme-btn" onClick={()=>setDark(!dark)} aria-label="تغییر تم"><Icon name={dark?"sun":"moon"}/></button>
+    <div className="auth-theme-controls"><ThemeControls colorTheme={colorTheme} onColorThemeChange={onColorThemeChange} dark={dark} setDark={setDark} compact/></div>
 
     <section className="auth-hero">
       <div className="brand-lockup">
@@ -205,13 +215,13 @@ function NavItem({icon,label,active,onClick}:{icon:string;label:string;active:bo
   return <button onClick={onClick} aria-current={active?"page":undefined} className={active?"nav-item active":"nav-item"}><span className="nav-icon"><Icon name={icon}/></span><span>{label}</span>{active&&<i/>}</button>;
 }
 
-function PageTop({eyebrow,title,desc,action}:{eyebrow:string;title:string;desc:string;action?:ReactNode}){
-  return <header className="page-top"><div><span className="eyebrow"><i/>{eyebrow}</span><h1>{title}</h1><p>{desc}</p></div><div className="top-actions">{action}<div className="live-pill"><Icon name="signal" size={14}/> پنل کاربری <small>•</small> HalloCall</div></div></header>;
+function PageTop({eyebrow,title,desc,action,themeControls}:{eyebrow:string;title:string;desc:string;action?:ReactNode;themeControls:ReactNode}){
+  return <header className="page-top"><div><span className="eyebrow"><i/>{eyebrow}</span><h1>{title}</h1><p>{desc}</p></div><div className="top-actions">{action}{themeControls}<div className="live-pill"><Icon name="signal" size={14}/> پنل کاربری <small>•</small> HalloCall</div></div></header>;
 }
 
 /* ─────────────────────────── home ─────────────────────────── */
 
-function Dashboard({user,go,onToast}:{user:User;go:(s:string)=>void;onToast:(s:string)=>void}){
+function Dashboard({user,go,onToast,themeControls}:{user:User;go:(s:string)=>void;onToast:(s:string)=>void;themeControls:ReactNode}){
   const [friends,setFriends]=useState<Friend[]>([]);
   const inviting=useRef<string | null>(null);
   useEffect(()=>{let active=true;const load=()=>api.friends().then(d=>{if(active)setFriends(d.friends)}).catch(()=>{});load();const id=setInterval(load,AUTO_REFRESH_MS);return()=>{active=false;clearInterval(id)};},[]);
@@ -219,7 +229,7 @@ function Dashboard({user,go,onToast}:{user:User;go:(s:string)=>void;onToast:(s:s
   const quickCall=async(friend:Friend)=>{if(inviting.current)return;inviting.current=friend.id;try{const d=await api.invite(friend.id);onToast(`درخواست تماس برای ${friend.username} ارسال شد`);go(`/call/${d.call.code}`);}catch(e){onToast(e instanceof Error?e.message:"خطا")}finally{inviting.current=null}};
 
   return <div className="page">
-    <PageTop eyebrow="WORKSPACE" title={`سلام ${user.username} 👋`} desc="همه‌چیز برای یک تماس سریع آماده است." action={<GlowButton tone="ghost" size="sm" icon="mask" onClick={()=>go("/profiles")}>گالری پروفایل</GlowButton>}/>
+    <PageTop eyebrow="WORKSPACE" title={`سلام ${user.username} 👋`} desc="همه‌چیز برای یک تماس سریع آماده است." action={<GlowButton tone="ghost" size="sm" icon="mask" onClick={()=>go("/profiles")}>گالری پروفایل</GlowButton>} themeControls={themeControls}/>
 
     <section className="dashboard-grid">
       <div className="hero-card glass">
@@ -291,7 +301,7 @@ function FriendRow({friend,onCall,onRemove}:{friend:Friend;onCall:()=>void;onRem
   </div>;
 }
 
-function Friends({user,go,onToast}:{user:User;go:(s:string)=>void;onToast:(s:string)=>void}){
+function Friends({user,go,onToast,themeControls}:{user:User;go:(s:string)=>void;onToast:(s:string)=>void;themeControls:ReactNode}){
   const [friends,setFriends]=useState<Friend[]>([]);
   const [requests,setRequests]=useState<FriendRequest[]>([]);
   const [q,setQ]=useState("");
@@ -319,7 +329,7 @@ function Friends({user,go,onToast}:{user:User;go:(s:string)=>void;onToast:(s:str
   const call=async(f:Friend)=>{if(inviting.current)return;inviting.current=f.id;try{const d=await api.invite(f.id);onToast(`درخواست تماس برای ${f.username} ارسال شد`);go(`/call/${d.call.code}`)}catch(e){onToast(e instanceof Error?e.message:"خطا")}finally{inviting.current=null}};
 
   return <div className="page">
-    <PageTop eyebrow="FRIENDS" title="فرندهای من" desc="یوزرنیم پیدا کن، درخواست بفرست، قبول کن و با یک کلیک وارد تماس شو."/>
+    <PageTop eyebrow="FRIENDS" title="فرندهای من" desc="یوزرنیم پیدا کن، درخواست بفرست، قبول کن و با یک کلیک وارد تماس شو." themeControls={themeControls}/>
     <section className="friends-layout">
       <div className="friends-main">
         <div className="panel-head glass"><div><h3>جست‌وجوی سریع</h3><p>نام کاربری دوستت را بنویس؛ درخواست از همین‌جا مدیریت می‌شود.</p></div><div className="search-wrap"><Icon name="search" size={18}/><input value={q} onChange={e=>search(e.target.value)} placeholder="search username..." dir="ltr" aria-label="جست‌وجوی نام کاربری" autoComplete="off"/></div></div>
@@ -347,7 +357,7 @@ function Friends({user,go,onToast}:{user:User;go:(s:string)=>void;onToast:(s:str
 
 /* ─────────────────────────── profile gallery ─────────────────────────── */
 
-function Profiles({user,onApply}:{user:User;onApply:(id:string)=>Promise<boolean>}){
+function Profiles({user,onApply,themeControls}:{user:User;onApply:(id:string)=>Promise<boolean>;themeControls:ReactNode}){
   const [pending,setPending]=useState<string>(user.avatar);
   useEffect(()=>{setPending(user.avatar)},[user.avatar]);
   const [saving,setSaving]=useState(false);
@@ -357,7 +367,7 @@ function Profiles({user,onApply}:{user:User;onApply:(id:string)=>Promise<boolean
   const save=async()=>{setSaving(true);const ok=await onApply(pending);setSaving(false);if(!ok)return};
 
   return <div className="page profiles-page">
-    <PageTop eyebrow="PROFILES" title="گالری پروفایل‌ها" desc={`${faNum(AVATARS.length)} آواتار در ${faNum(AVATAR_CATEGORIES.length)} کالکشن: افسانه‌های فوتبال، ابرقهرمان‌ها، Elden Ring، Dark Souls و آیکون‌های بازی.`}/>
+    <PageTop eyebrow="PROFILES" title="گالری پروفایل‌ها" desc={`${faNum(AVATARS.length)} آواتار در ${faNum(AVATAR_CATEGORIES.length)} کالکشن: افسانه‌های فوتبال، ابرقهرمان‌ها، Elden Ring، Dark Souls و آیکون‌های بازی.`} themeControls={themeControls}/>
     <section className="profile-stage glass">
       <div className="card-lamp" aria-hidden="true"/>
       <div className="stage-avatar" style={{"--accent":chosen.accent, background:chosen.gradient, boxShadow:`0 0 0 1px ${chosen.ring}, 0 26px 70px ${chosen.glow}`} as CSSProperties}>
@@ -448,7 +458,7 @@ function ProfileModal({user,dark,onToggleTheme,onLogout,onClose,onApply}:{user:U
 
 /* ─────────────────────────── calls ─────────────────────────── */
 
-function Calls({go,onToast}:{go:(s:string)=>void;onToast:(s:string)=>void}){
+function Calls({go,onToast,themeControls}:{go:(s:string)=>void;onToast:(s:string)=>void;themeControls:ReactNode}){
   const [name,setName]=useState("Friend Call");
   const [code,setCode]=useState("");
   const [busy,setBusy]=useState(false);
@@ -465,7 +475,7 @@ function Calls({go,onToast}:{go:(s:string)=>void;onToast:(s:string)=>void}){
   };
 
   return <div className="page">
-    <PageTop eyebrow="CALLS" title="کال صوتی" desc={`کال بساز، کد را بالای صفحه ببین و تا ${MAX_CALL_PARTICIPANTS} نفر را دور هم جمع کن.`}/>
+    <PageTop eyebrow="CALLS" title="کال صوتی" desc={`کال بساز، کد را بالای صفحه ببین و تا ${MAX_CALL_PARTICIPANTS} نفر را دور هم جمع کن.`} themeControls={themeControls}/>
     <section className="calls-grid">
       <div className="create-call glass">
         <div className="card-lamp" aria-hidden="true"/>

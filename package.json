@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/build-avatars.mjs && vite",
+    "worker:dev": "wrangler dev --ip 127.0.0.1 --port 8787",
     "build": "node scripts/build-avatars.mjs && vite build",
     "typecheck": "tsc --noEmit",
     "verify": "npm run typecheck && npm run build",

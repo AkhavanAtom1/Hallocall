@@ -10,6 +10,8 @@ import { AvatarImage } from "./AvatarImage";
 import { GlowButton } from "./GlowButton";
 import { Icon } from "./Icon";
 import { Scene } from "./Scene";
+import { ThemeControls } from "./ThemeControls";
+import type { ColorThemeId } from "../lib/theme";
 
 const QUICK_EMOJIS = ["😂", "❤️", "👍", "🔥", "🎉", "😮", "👏", "🙌", "💯", "✨", "🥳", "👀"];
 const QUALITY_PRESETS = [
@@ -78,13 +80,15 @@ function microphoneError(error: unknown) {
 }
 
 export function CallPage({
-  user, code, go, dark, setDark,
+  user, code, go, dark, setDark, colorTheme, onColorThemeChange,
 }: {
   user: User;
   code: string;
   go: (path: string) => void;
   dark: boolean;
   setDark: (value: boolean) => void;
+  colorTheme: ColorThemeId;
+  onColorThemeChange: (theme: ColorThemeId) => void;
 }) {
   const [call, setCall] = useState<CallInfo | null>(null);
   const [error, setError] = useState("");
@@ -107,7 +111,9 @@ export function CallPage({
   const wsRef = useRef<WebSocket | null>(null);
   const participantsRef = useRef<Participant[]>([]);
   const pcs = useRef(new Map<string, RTCPeerConnection>());
-  const creatingPeers = useRef(new Set<string>());
+  const creatingPeers = useRef(new Map<string, { token: number; promise: Promise<RTCPeerConnection | null> }>());
+  const peerCreationToken = useRef(0);
+  const peerLifecycle = useRef(0);
   const local = useRef<MediaStream | null>(null);
   const audioEls = useRef(new Map<string, HTMLAudioElement>());
   const offerStarted = useRef(new Set<string>());
@@ -230,59 +236,76 @@ export function CallPage({
     }
   }, [updateParticipants]);
 
-  const makePeer = useCallback(async (participant: Participant) => {
-    if (pcs.current.has(participant.id) || creatingPeers.current.has(participant.id)) {
-      return pcs.current.get(participant.id) ?? null;
-    }
-    if (!participantsRef.current.some((entry) => entry.id === participant.id)) return null;
+  const makePeer = useCallback((participant: Participant): Promise<RTCPeerConnection | null> => {
+    const existing = pcs.current.get(participant.id);
+    if (existing) return Promise.resolve(existing);
+    const pending = creatingPeers.current.get(participant.id);
+    if (pending) return pending.promise;
+    if (!participantsRef.current.some((entry) => entry.id === participant.id)) return Promise.resolve(null);
 
-    creatingPeers.current.add(participant.id);
-    try {
-      iceServersRef.current ??= getIceServers();
-      const iceServers = await iceServersRef.current;
-      if (!participantsRef.current.some((entry) => entry.id === participant.id)) return null;
+    const token = ++peerCreationToken.current;
+    const lifecycle = peerLifecycle.current;
+    const promise = (async (): Promise<RTCPeerConnection | null> => {
+      let peer: RTCPeerConnection | null = null;
+      try {
+        iceServersRef.current ??= getIceServers();
+        const iceServers = await iceServersRef.current;
+        if (creatingPeers.current.get(participant.id)?.token !== token || peerLifecycle.current !== lifecycle ||
+            !participantsRef.current.some((entry) => entry.id === participant.id)) return null;
 
-      const peer = new RTCPeerConnection({ iceServers });
-      pcs.current.set(participant.id, peer);
-      updateParticipants((current) => current.map((entry) => entry.id === participant.id ? { ...entry, connected: false } : entry));
-      for (const track of local.current?.getTracks() ?? []) peer.addTrack(track, local.current!);
-      await applyAudioQuality(peer, qualityRef.current);
-
-      peer.onicecandidate = (event) => {
-        if (event.candidate) send({ type: "signal", to: participant.id, payload: { kind: "ice", candidate: event.candidate.toJSON() } });
-      };
-      peer.onconnectionstatechange = () => {
-        const connected = peer.connectionState === "connected";
-        updateParticipants((current) => {
-          const existing = current.find((entry) => entry.id === participant.id);
-          if (!existing || existing.connected === connected) return current;
-          return current.map((entry) => entry.id === participant.id ? { ...entry, connected } : entry);
-        });
-      };
-      peer.ontrack = (event) => {
-        const stream = event.streams[0];
-        if (!stream) return;
-        let audio = audioEls.current.get(participant.id);
-        if (!audio) {
-          audio = new Audio();
-          audio.autoplay = true;
-          audio.setAttribute("playsinline", "");
-          audio.setAttribute("aria-hidden", "true");
-          audio.style.cssText = "position:fixed;width:1px;height:1px;left:-10px;top:-10px;opacity:0;pointer-events:none";
-          document.body.appendChild(audio);
-          audioEls.current.set(participant.id, audio);
+        peer = new RTCPeerConnection({ iceServers });
+        pcs.current.set(participant.id, peer);
+        updateParticipants((current) => current.map((entry) => entry.id === participant.id ? { ...entry, connected: false } : entry));
+        for (const track of local.current?.getTracks() ?? []) {
+          const stream = local.current;
+          if (stream) peer.addTrack(track, stream);
         }
-        audio.srcObject = stream;
-        void audio.play().catch(() => setPlaybackBlocked(true));
-        setupAnalyser(stream, participant.id);
-      };
-      return peer;
-    } catch {
-      closePeer(participant.id);
-      return null;
-    } finally {
-      creatingPeers.current.delete(participant.id);
-    }
+
+        peer.onicecandidate = (event) => {
+          if (event.candidate) send({ type: "signal", to: participant.id, payload: { kind: "ice", candidate: event.candidate.toJSON() } });
+        };
+        peer.onconnectionstatechange = () => {
+          const connected = peer?.connectionState === "connected";
+          updateParticipants((current) => {
+            const currentParticipant = current.find((entry) => entry.id === participant.id);
+            if (!currentParticipant || currentParticipant.connected === connected) return current;
+            return current.map((entry) => entry.id === participant.id ? { ...entry, connected } : entry);
+          });
+        };
+        peer.ontrack = (event) => {
+          const stream = event.streams[0];
+          if (!stream) return;
+          let audio = audioEls.current.get(participant.id);
+          if (!audio) {
+            audio = new Audio();
+            audio.autoplay = true;
+            audio.setAttribute("playsinline", "");
+            audio.setAttribute("aria-hidden", "true");
+            audio.style.cssText = "position:fixed;width:1px;height:1px;left:-10px;top:-10px;opacity:0;pointer-events:none";
+            document.body.appendChild(audio);
+            audioEls.current.set(participant.id, audio);
+          }
+          audio.srcObject = stream;
+          void audio.play().catch(() => setPlaybackBlocked(true));
+          setupAnalyser(stream, participant.id);
+        };
+
+        await applyAudioQuality(peer, qualityRef.current);
+        if (creatingPeers.current.get(participant.id)?.token !== token || peerLifecycle.current !== lifecycle || pcs.current.get(participant.id) !== peer) {
+          peer.close();
+          return null;
+        }
+        return peer;
+      } catch {
+        if (peer && pcs.current.get(participant.id) === peer) closePeer(participant.id);
+        return null;
+      } finally {
+        if (creatingPeers.current.get(participant.id)?.token === token) creatingPeers.current.delete(participant.id);
+      }
+    })();
+
+    creatingPeers.current.set(participant.id, { token, promise });
+    return promise;
   }, [closePeer, send, setupAnalyser, updateParticipants]);
 
   const maybeOffer = useCallback(async (participant: Participant) => {
@@ -357,6 +380,7 @@ export function CallPage({
 
   useEffect(() => {
     if (!joined) return;
+    peerLifecycle.current += 1;
     let disposed = false;
     reconnectAllowed.current = true;
     reconnectAttempt.current = 0;
@@ -512,6 +536,8 @@ export function CallPage({
 
     return () => {
       disposed = true;
+      peerLifecycle.current += 1;
+      creatingPeers.current.clear();
       reconnectAllowed.current = false;
       if (reconnectTimer.current !== null) window.clearTimeout(reconnectTimer.current);
       reconnectTimer.current = null;
@@ -667,7 +693,7 @@ export function CallPage({
           <small>•</small><span>{participants.length} / {maxParticipants} نفر</span>
         </div>
         <div className="call-head-actions">
-          <button className="icon-btn" onClick={() => setDark(!dark)} aria-label="تغییر تم" title="تغییر تم"><Icon name={dark ? "sun" : "moon"} /></button>
+          <ThemeControls colorTheme={colorTheme} onColorThemeChange={onColorThemeChange} dark={dark} setDark={setDark} compact/>
           <button className="leave-top" onClick={leave} disabled={leaving}><Icon name="phoneOff" size={16} /> {leaving ? "در حال خروج…" : "خروج"}</button>
         </div>
       </header>
