@@ -27,6 +27,9 @@ export function Icon({ name, size = 20, stroke = 1.9 }: { name: string; size?: n
     volumeOff: <><path d="M11 5 6 9H3v6h3l5 4z"/><path d="m16 9 5 6m0-6-5 6"/></>,
     spark: <><path d="m12 3-1.2 5.8L5 10l5.8 1.2L12 17l1.2-5.8L19 10l-5.8-1.2Z"/><path d="m19 17-.6 2.4L16 20l2.4.6L19 23l.6-2.4L22 20l-2.4-.6Z"/></>,
     info: <><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></>,
+    screen: <><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4M9 11l3-3 3 3M12 8v6"/></>,
+    screenOff: <><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4M2 2l20 20"/></>,
+    expand: <><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></>,
     mask: <><path d="M3.6 5.6c5.6-1.3 11.2-1.3 16.8 0 .4 6.5-2.2 11.7-8.4 13.7-6.2-2-8.8-7.2-8.4-13.7Z"/><path d="M8.1 9.5c.9-.7 2-.7 2.9 0M13 9.5c.9-.7 2-.7 2.9 0M9 14.4c1.9 1.3 4.1 1.3 6 0"/></>,
   };
   return <svg {...common}>{paths[name] ?? paths.spark}</svg>;

@@ -10,7 +10,7 @@ import { AppAvatar } from "./components/AppAvatar";
 import { APP_AVATAR, APP_AVATAR_DEF } from "./lib/appIdentity";
 import { GlowButton } from "./components/GlowButton";
 import { Scene } from "./components/Scene";
-import { CALL_CODE_LENGTH, MAX_CALL_PARTICIPANTS } from "./lib/call";
+import { CALL_CODE_LENGTH } from "./lib/call";
 import { CallPage } from "./components/CallRoom";
 import { ThemeControls } from "./components/ThemeControls";
 import { COLOR_THEME_STORAGE_KEY, readSavedColorTheme } from "./lib/theme";
@@ -154,7 +154,7 @@ function LoginPage({onSuccess,dark,setDark,colorTheme,onColorThemeChange}:{onSuc
       <div className="hero-copy">
         <span className="eyebrow"><i/> ساخته‌شده برای تماس‌های گروهی</span>
         <h2>یک تماس.<br/><em>یک حلقه نور.</em><br/>و تمام.</h2>
-        <p>دوستت را با یوزرنیم پیدا کن، تماس بگیر یا یک اتاق خصوصی بساز و تا ۲۰ نفر را با یک کد ساده دور هم جمع کن.</p>
+        <p>دوستت را با یوزرنیم پیدا کن، تماس بگیر یا یک اتاق خصوصی بساز و همه را با یک کد ساده دور هم جمع کن.</p>
       </div>
       <div className="feature-row">
         <Feature icon="users" title="Friends" text="دوستان آنلاین را ببین"/>
@@ -481,7 +481,7 @@ function Calls({go,onToast,themeControls}:{go:(s:string)=>void;onToast:(s:string
   };
 
   return <div className="page">
-    <PageTop eyebrow="CALLS" title="کال صوتی" desc={`کال بساز، کد را بالای صفحه ببین و تا ${MAX_CALL_PARTICIPANTS} نفر را دور هم جمع کن.`} themeControls={themeControls}/>
+    <PageTop eyebrow="CALLS" title="کال صوتی" desc="کال بساز، کد را بالای صفحه ببین و دوستانت را دور هم جمع کن." themeControls={themeControls}/>
     <section className="calls-grid">
       <div className="create-call glass">
         <div className="card-lamp" aria-hidden="true"/>

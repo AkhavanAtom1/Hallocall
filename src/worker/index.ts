@@ -227,6 +227,27 @@ async function requireUser(env: Env, req: Request): Promise<AuthResult> {
 }
 function safeUser(row: { id: string; username: string; avatar: string }): SafeUser { return { id: row.id, username: row.username, avatar: row.avatar }; }
 
+/** Per-socket state kept in the WebSocket attachment (survives DO hibernation). */
+type RoomPeer = {
+  id: string;
+  username: string;
+  avatar: string;
+  muted: boolean;
+  /** True while this person is sharing their screen (one sharer per room). */
+  sharing?: boolean;
+  /** Page-session id chosen by the browser; peers bind WebRTC connections to it. */
+  sid?: string;
+  joinedAt?: number;
+  lastActive?: number;
+  /** Set on a socket that was replaced by a newer connection of the same user. */
+  superseded?: boolean;
+};
+
+/** Clients ping every 15 s; a pinging client silent for this long is dead. */
+const STALE_AFTER_MS = 75_000;
+const SWEEP_EVERY_MS = 30_000;
+const ACTIVITY_WRITE_INTERVAL_MS = 10_000;
+
 export class CallRoom {
   private state: DurableObjectState;
   private messages: Array<{ id:string; userId:string; username:string; avatar:string; text:string; createdAt:number }> = [];
@@ -235,6 +256,10 @@ export class CallRoom {
 
   constructor(state: DurableObjectState) {
     this.state = state;
+    /* Keep-alive without waking the object: the browser sends "ping", the
+       runtime answers "pong" itself. Without this, idle mobile networks drop
+       the socket and the person silently falls out of the call. */
+    try { state.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong")); } catch {}
   }
 
   private async ensureLoaded() {
@@ -247,19 +272,32 @@ export class CallRoom {
     await this.loading;
   }
 
+  private peerOf(socket: WebSocket): RoomPeer | null {
+    try {
+      return (socket.deserializeAttachment() as RoomPeer | null) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   /** Accepted WebSockets are the source of truth: in-memory maps disappear when
-   * the Durable Object hibernates, while serialized attachments survive. */
+   * the Durable Object hibernates, while serialized attachments survive.
+   *
+   * Exactly ONE live socket per user is returned (the newest). Replaced and
+   * closing sockets are ignored even if the runtime has not finished their
+   * close handshake yet — that lingering window is what used to show the same
+   * person twice and inflate the participant count. */
   private connectedSockets(except?: WebSocket) {
-    return this.state.getWebSockets().flatMap((socket) => {
-      if (except && socket === except) return [];
-      try {
-        const peer = socket.deserializeAttachment() as { id:string; username:string; avatar:string; muted:boolean } | null;
-        if (!peer || socket.readyState === WebSocket.CLOSING || socket.readyState === WebSocket.CLOSED) return [];
-        return [[socket, peer] as const];
-      } catch {
-        return [];
-      }
-    });
+    const newest = new Map<string, readonly [WebSocket, RoomPeer]>();
+    for (const socket of this.state.getWebSockets()) {
+      if (except && socket === except) continue;
+      if (socket.readyState === WebSocket.CLOSING || socket.readyState === WebSocket.CLOSED) continue;
+      const peer = this.peerOf(socket);
+      if (!peer || peer.superseded || !peer.id) continue;
+      const current = newest.get(peer.id);
+      if (!current || (peer.joinedAt ?? 0) >= (current[1].joinedAt ?? 0)) newest.set(peer.id, [socket, peer] as const);
+    }
+    return Array.from(newest.values());
   }
 
   private snapshot(except?: WebSocket) {
@@ -267,7 +305,9 @@ export class CallRoom {
       id:peer.id,
       username:peer.username,
       avatar:peer.avatar,
-      muted:peer.muted,
+      muted:!!peer.muted,
+      sharing:!!peer.sharing,
+      sid:peer.sid ?? "",
     }));
   }
 
@@ -281,6 +321,13 @@ export class CallRoom {
     }
   }
 
+  private async scheduleSweep() {
+    try {
+      const current = await this.state.storage.getAlarm();
+      if (current === null) await this.state.storage.setAlarm(now() + SWEEP_EVERY_MS);
+    } catch {}
+  }
+
   async fetch(request: Request) {
     await this.ensureLoaded();
     const url = new URL(request.url);
@@ -290,16 +337,27 @@ export class CallRoom {
       const username = request.headers.get("x-username");
       const avatar = request.headers.get("x-avatar") || "ronaldo_red";
       if (!id || !username) return new Response("Unauthorized", { status:401 });
+      /* Empty for older cached clients that predate heartbeat/session ids; those
+         are never evicted by the stale sweep because they do not ping. */
+      const sid = (url.searchParams.get("sid") ?? "").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 64);
+      const joinedAt = now();
 
-      for (const [socket, peer] of this.connectedSockets()) {
-        if (peer.id === id) {
-          try { socket.close(1000, "Reconnected"); } catch {}
+      /* One live connection per user: the newest wins. Old sockets are flagged
+         BEFORE closing so they vanish from every snapshot immediately. */
+      for (const socket of this.state.getWebSockets()) {
+        const peer = this.peerOf(socket);
+        if (!peer || peer.id !== id || peer.superseded) continue;
+        peer.superseded = true;
+        try { socket.serializeAttachment(peer); } catch {}
+        /* A different page session (second tab/device) took over: tell the old
+           one to stop instead of reconnecting, otherwise the two fight forever. */
+        if (peer.sid && peer.sid !== sid) {
+          try { socket.send(JSON.stringify({ type:"replaced" })); } catch {}
         }
+        try { socket.close(4001, "Replaced"); } catch {}
       }
 
-      /* Count everyone except this user so a reconnect into a full room is not
-         rejected just because the previous socket is still draining. */
-      const occupied = this.connectedSockets().filter(([, peer]) => peer.id !== id).length;
+      const occupied = this.connectedSockets().length;
       if (occupied >= MAX_CALL_PARTICIPANTS) {
         return new Response(`این کال به حداکثر ظرفیت ${MAX_CALL_PARTICIPANTS} نفر رسیده است.`, { status:409 });
       }
@@ -309,7 +367,7 @@ export class CallRoom {
       const server = pair[1];
       this.state.acceptWebSocket(server);
 
-      const session = { id, username, avatar, muted:false };
+      const session: RoomPeer = { id, username, avatar, muted:false, sharing:false, sid, joinedAt, lastActive:joinedAt };
       server.serializeAttachment(session);
 
       server.send(JSON.stringify({
@@ -318,7 +376,8 @@ export class CallRoom {
         participants:this.snapshot(),
         messages:this.messages,
       }));
-      this.broadcast({ type:"presence", participants:this.snapshot() });
+      this.broadcast({ type:"presence", participants:this.snapshot() }, server);
+      await this.scheduleSweep();
 
       return new Response(null, { status:101, webSocket:client } as any);
     }
@@ -328,7 +387,7 @@ export class CallRoom {
     }
 
     if (url.pathname.endsWith("/end")) {
-      for (const [socket] of this.connectedSockets()) {
+      for (const socket of this.state.getWebSockets()) {
         try { socket.send(JSON.stringify({ type:"ended" })); } catch {}
         try { socket.close(1000, "Call ended"); } catch {}
       }
@@ -345,8 +404,8 @@ export class CallRoom {
       try { ws.close(1009, "Message too large"); } catch {}
       return;
     }
-    const session = ws.deserializeAttachment() as { id:string; username:string; avatar:string; muted:boolean } | null;
-    if (!session) return;
+    const session = this.peerOf(ws);
+    if (!session || session.superseded) return;
 
     try {
       const msg = JSON.parse(raw) as {
@@ -356,7 +415,14 @@ export class CallRoom {
         text?:string;
         emoji?:string;
         muted?:boolean;
+        active?:boolean;
       };
+
+      const current = now();
+      if (current - (session.lastActive ?? 0) > ACTIVITY_WRITE_INTERVAL_MS) {
+        session.lastActive = current;
+        try { ws.serializeAttachment(session); } catch {}
+      }
 
       if (msg.type === "signal" && msg.to) {
         for (const [socket, peer] of this.connectedSockets()) {
@@ -371,6 +437,23 @@ export class CallRoom {
 
       if (msg.type === "mute") {
         session.muted = !!msg.muted;
+        ws.serializeAttachment(session);
+        this.broadcast({ type:"presence", participants:this.snapshot() });
+        return;
+      }
+
+      if (msg.type === "screen") {
+        const wantsToShare = !!msg.active;
+        if (wantsToShare) {
+          /* One presenter at a time keeps the mesh upload budget sane. */
+          const other = this.connectedSockets().find(([, peer]) => peer.id !== session.id && peer.sharing);
+          if (other) {
+            try { ws.send(JSON.stringify({ type:"screen-denied", by:other[1].username })); } catch {}
+            return;
+          }
+        }
+        if (!!session.sharing === wantsToShare) return;
+        session.sharing = wantsToShare;
         ws.serializeAttachment(session);
         this.broadcast({ type:"presence", participants:this.snapshot() });
         return;
@@ -412,14 +495,51 @@ export class CallRoom {
     }
   }
 
-  async webSocketClose(ws: WebSocket) {
-    const session = ws.deserializeAttachment() as { id:string; username:string; avatar:string; muted:boolean } | null;
-    if (session) this.broadcast({ type:"presence", participants:this.snapshot(ws) }, ws);
+  async webSocketClose(ws: WebSocket, code?: number, reason?: string) {
+    const peer = this.peerOf(ws);
+    const safeCode = typeof code === "number" && code >= 1000 && code <= 4999 && ![1005, 1006, 1015].includes(code) ? code : 1000;
+    try { ws.close(safeCode, (reason ?? "").slice(0, 100)); } catch {}
+    /* A replaced socket was already removed from the list when its successor
+       connected; announcing again would only cause a redundant refresh. */
+    if (peer && !peer.superseded) this.broadcast({ type:"presence", participants:this.snapshot(ws) }, ws);
   }
 
   async webSocketError(ws: WebSocket) {
-    const session = ws.deserializeAttachment() as { id:string; username:string; avatar:string; muted:boolean } | null;
-    if (session) this.broadcast({ type:"presence", participants:this.snapshot(ws) }, ws);
+    const peer = this.peerOf(ws);
+    if (peer && !peer.superseded) this.broadcast({ type:"presence", participants:this.snapshot(ws) }, ws);
+  }
+
+  /** Periodic sweep: evicts "ghost" participants whose connection died without
+   * a close frame (network loss, closed laptop lid, killed app). */
+  async alarm() {
+    const sockets = this.state.getWebSockets();
+    if (!sockets.length) return;
+
+    const stampOf = (this.state as unknown as { getWebSocketAutoResponseTimestamp?: (socket: WebSocket) => Date | null }).getWebSocketAutoResponseTimestamp;
+    const current = now();
+    let evicted = false;
+
+    if (typeof stampOf === "function") {
+      for (const socket of sockets) {
+        const peer = this.peerOf(socket);
+        /* Only clients that speak the heartbeat protocol (they send a sid) are
+           expected to ping; older cached bundles are never evicted. */
+        if (!peer || peer.superseded || !peer.sid) continue;
+        let stamp = 0;
+        try { stamp = stampOf.call(this.state, socket)?.getTime() ?? 0; } catch {}
+        const last = Math.max(peer.joinedAt ?? 0, peer.lastActive ?? 0, stamp);
+        if (current - last <= STALE_AFTER_MS) continue;
+        peer.superseded = true;
+        try { socket.serializeAttachment(peer); } catch {}
+        try { socket.close(4000, "Stale connection"); } catch {}
+        evicted = true;
+      }
+    }
+
+    if (evicted) this.broadcast({ type:"presence", participants:this.snapshot() });
+    if (this.state.getWebSockets().length) {
+      try { await this.state.storage.setAlarm(current + SWEEP_EVERY_MS); } catch {}
+    }
   }
 }
 
@@ -433,7 +553,7 @@ async function callDO(env: Env, code:string, req:Request, user:SafeUser): Promis
   return response ?? new Response("Call room unavailable", { status:503 });
 }
 
-async function ensureAuthDatabase(env: Env) {
+async function runEnsureAuthDatabase(env: Env) {
   await env.HALLOCALL_DB.batch([
     env.HALLOCALL_DB.prepare(`CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
@@ -489,6 +609,17 @@ async function ensureAuthDatabase(env: Env) {
   ]);
 }
 
+/* The schema check used to run 16 statements on EVERY login and registration.
+   It is now done once per Worker isolate; the health endpoint can force a repair. */
+let authSchemaReady: Promise<void> | null = null;
+function ensureAuthDatabase(env: Env) {
+  authSchemaReady ??= runEnsureAuthDatabase(env).catch((error) => {
+    authSchemaReady = null;
+    throw error;
+  });
+  return authSchemaReady;
+}
+
 async function api(env: Env, req: Request): Promise<Response> {
   const url = new URL(req.url);
   const path = url.pathname.replace(/\/+$/, "") || "/";
@@ -507,6 +638,7 @@ async function api(env: Env, req: Request): Promise<Response> {
       const required = ["users","sessions","friendships","calls","call_invites"];
       const missing = required.filter((name) => !names.has(name));
       if (missing.length) {
+        authSchemaReady = null;
         await ensureAuthDatabase(env);
       }
       return json({ ok:true, service:"hallocall", database:"connected", schema:"ready", repaired:missing.length>0, time:now(), version:"auth-v5" });

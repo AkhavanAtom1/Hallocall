@@ -77,4 +77,8 @@ export type Participant = User & {
   muted: boolean;
   speaking?: boolean;
   connected?: boolean;
+  /** True while this participant is presenting their screen. */
+  sharing?: boolean;
+  /** Browser page-session id; WebRTC links are bound to it (see lib/mesh.ts). */
+  sid?: string;
 };

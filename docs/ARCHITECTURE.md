@@ -25,6 +25,29 @@ The application uses browser-to-browser audio. Signaling is not the media path.
 5. The quality slider changes the outgoing audio sender bitrate.
 6. Cloudflare TURN can be enabled for difficult NAT/firewall cases.
 
+### Sessions, reconnects and the mesh engine (`src/lib/mesh.ts`)
+
+Every browser page generates a random **session id** (`sid`) and sends it when it opens the WebSocket (`/ws/call/:code?sid=…`). The Durable Object stores it next to the participant and publishes it in every `presence` list.
+
+- A WebRTC link belongs to *(user, remote sid)*. When the same user comes back with a new `sid`, the old `RTCPeerConnection` is closed and a new one is negotiated; signals carry `sid`/`toSid`, so packets from a dead session are dropped.
+- Negotiation uses the *perfect negotiation* pattern (polite/impolite by user id), so both sides may renegotiate at any time (screen share) without deadlocks. The polite side waits ~350 ms before its first offer to avoid needless collisions.
+- Health: `connected` → ok. `disconnected` for 2.5 s or `failed` → ICE restart. A link that never comes up is restarted by a watchdog. After 6 failed restarts the page does a full re-join with a fresh `sid` (at most once per 45 s).
+- Signals from ids that are not in the participant list are buffered for a few seconds (presence can lag by a few milliseconds) and then discarded; they never create participants.
+
+### Keep-alive and ghost cleanup
+
+The Durable Object registers `setWebSocketAutoResponse("ping" → "pong")`, so the browser can ping every 15 s without waking the object. A pong that does not arrive within 40 s makes the page drop the socket and reconnect. On the server an alarm runs every 30 s while sockets exist and evicts any heartbeat-capable client that has been silent for 75 s (a closed laptop lid, a lost network).
+
+### One connection per user
+
+`CallRoom.connectedSockets()` returns exactly one socket per user id (the newest). When a user connects again, older sockets are flagged `superseded` in their attachment *before* `close()` is called, so they disappear from snapshots immediately. If the new connection has a different `sid` (second tab/device), the old page receives `{type:"replaced"}` and stops instead of reconnecting.
+
+### Screen share
+
+Screen share is a second (video) track on the same peer connections, added with `addTrack` and removed with `removeTrack`; the resulting renegotiation goes through the same perfect-negotiation path. The Durable Object keeps a `sharing` flag per participant (one presenter at a time; others receive `screen-denied`) and the flag is part of `presence`, which is what the UI uses to show or hide the shared screen.
+
+Because calls are a peer-to-peer mesh, the presenter uploads one copy per viewer. `applyScreenQuality` therefore splits a ~2.4 Mbit/s budget across viewers (and lowers frame rate/resolution for larger audiences). For large audiences an SFU (for example Cloudflare Realtime) would be the next step.
+
 ## Durable Object choice
 
 Each call code maps to one Durable Object name. This makes a call's state strongly consistent and isolated from unrelated calls. The Durable Object enforces the shared 20-participant room limit before accepting a WebSocket.

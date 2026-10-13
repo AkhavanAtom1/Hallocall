@@ -265,11 +265,13 @@ body { background: #04060d; }
   top: auto;
   right: 18px;
   left: auto;
-  width: min(360px, calc(100vw - 36px));
+  width: min(400px, calc(100vw - 36px));
   bottom: calc(var(--dock-space) + env(safe-area-inset-bottom));
-  height: min(58vh, 520px);
-  height: min(58dvh, 520px);
-  max-height: none;
+  /* tall panel: earlier messages stay visible without constant scrolling */
+  height: min(82vh, 820px);
+  height: min(82dvh, 820px);
+  max-height: calc(100vh - var(--dock-space) - 92px);
+  max-height: calc(100dvh - var(--dock-space) - 92px - env(safe-area-inset-top));
   border-radius: 22px;
   z-index: 26;
 }
@@ -410,8 +412,8 @@ body { background: #04060d; }
     left: 8px;
     right: 8px;
     width: auto;
-    height: min(56vh, 440px);
-    height: min(56dvh, 440px);
+    height: min(78vh, 680px);
+    height: min(78dvh, 680px);
     border-radius: 20px;
   }
   .chat-list { padding: 12px; }
@@ -429,7 +431,7 @@ body { background: #04060d; }
 /* landscape phones: keep the toolbar + chat usable */
 @media (max-width: 900px) and (max-height: 460px) {
   :root { --dock-space: 104px; }
-  .chat-drawer { height: min(70vh, 320px); }
+  .chat-drawer { height: min(84vh, 360px); }
   .call-toolbar .tool { min-height: 62px; }
 }
 

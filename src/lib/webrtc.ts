@@ -40,6 +40,43 @@ export async function applyAudioQuality(pc: RTCPeerConnection, quality: number):
   return results.every(Boolean);
 }
 
+/** Total upload budget (bits/s) for one screen share. Calls are a peer-to-peer
+ * mesh, so the presenter uploads one copy per viewer: the budget is split. */
+export const SCREEN_TOTAL_BUDGET = 2_400_000;
+export const SCREEN_MIN_BITRATE = 250_000;
+export const SCREEN_MAX_BITRATE = 2_500_000;
+
+export function screenBitrateForPeers(peerCount: number) {
+  const viewers = Math.max(1, Math.floor(peerCount) || 1);
+  return Math.round(Math.min(SCREEN_MAX_BITRATE, Math.max(SCREEN_MIN_BITRATE, SCREEN_TOTAL_BUDGET / viewers)));
+}
+
+/**
+ * Cap the screen-share video sender. Best-effort like the audio control:
+ * browsers reject parameter changes before the first negotiation finishes, in
+ * which case the caller simply retries after the connection is stable.
+ */
+export async function applyScreenQuality(sender: RTCRtpSender, peerCount: number): Promise<boolean> {
+  try {
+    const parameters = sender.getParameters();
+    if (!parameters.encodings?.length) return false;
+    const maxBitrate = screenBitrateForPeers(peerCount);
+    for (const encoding of parameters.encodings) {
+      encoding.maxBitrate = maxBitrate;
+      encoding.maxFramerate = peerCount > 6 ? 8 : peerCount > 3 ? 12 : 20;
+      if (peerCount > 8) encoding.scaleResolutionDownBy = 2;
+      else if (peerCount > 4) encoding.scaleResolutionDownBy = 1.5;
+      else encoding.scaleResolutionDownBy = 1;
+    }
+    // Slides/text must stay readable: drop frames before dropping resolution.
+    (parameters as RTCRtpSendParameters & { degradationPreference?: string }).degradationPreference = "maintain-resolution";
+    await sender.setParameters(parameters);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function isIceServer(value: unknown): value is RTCIceServer {
   if (!value || typeof value !== "object") return false;
   const server = value as { urls?: unknown; username?: unknown; credential?: unknown };
