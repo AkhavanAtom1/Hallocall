@@ -21,9 +21,11 @@ import type { PeerQuality } from "./quality";
  */
 
 export type SignalPayload = {
-  kind: "offer" | "answer" | "ice";
+  kind: "offer" | "answer" | "ice" | "screen-info";
   sdp?: RTCSessionDescriptionInit;
   candidate?: RTCIceCandidateInit;
+  /** screen-info: id of the MediaStream that carries the presenter's screen (and tab sound); null when sharing stops. */
+  streamId?: string | null;
   /** Sender's page-session id. */
   sid?: string;
   /** Page-session id of the intended recipient, when the sender knows it. */
@@ -40,6 +42,8 @@ export type MeshOptions = {
   onPeerState: (id: string, connected: boolean) => void;
   onRemoteAudio: (id: string, stream: MediaStream) => void;
   onRemoteScreen: (id: string, stream: MediaStream | null) => void;
+  /** Sound that comes with a shared screen (tab / system audio), separate from the presenter's voice. */
+  onRemoteScreenAudio?: (id: string, stream: MediaStream | null) => void;
   onPeerClosed: (id: string) => void;
   /** Connection quality of one peer (bars in the people list). Optional. */
   onPeerQuality?: (id: string, quality: PeerQuality) => void;
@@ -63,6 +67,9 @@ type Entry = {
   /** Set when we joined without a microphone (receive-only) so it can be upgraded later. */
   audioTransceiver: RTCRtpTransceiver | null;
   screenSender: RTCRtpSender | null;
+  screenAudioSender: RTCRtpSender | null;
+  /** Stream id announced by the remote presenter (see "screen-info"). */
+  screenStreamId: string | null;
   chain: Promise<void>;
   closed: boolean;
   /** A remote offer/answer has been applied at least once. */
@@ -182,9 +189,15 @@ export class CallMesh {
   stopScreen() {
     this.screenStream = null;
     for (const entry of this.peers.values()) {
-      if (!entry.screenSender) continue;
-      try { entry.pc.removeTrack(entry.screenSender); } catch { /* already gone */ }
-      entry.screenSender = null;
+      if (!entry.screenSender && !entry.screenAudioSender) continue;
+      /* Tell the viewer first, so the sound is released together with the picture. */
+      this.signal(entry, { kind: "screen-info", streamId: null });
+      for (const key of ["screenSender", "screenAudioSender"] as const) {
+        const sender = entry[key];
+        if (!sender) continue;
+        try { entry.pc.removeTrack(sender); } catch { /* already gone */ }
+        entry[key] = null;
+      }
     }
   }
 
@@ -258,6 +271,8 @@ export class CallMesh {
       audioSender: null,
       audioTransceiver: null,
       screenSender: null,
+      screenAudioSender: null,
+      screenStreamId: null,
       chain: Promise.resolve(),
       closed: false,
       remoteApplied: false,
@@ -332,8 +347,10 @@ export class CallMesh {
       if (entry.closed) return;
       const track = event.track;
       const stream = event.streams[0] ?? new MediaStream([track]);
-      if (track.kind === "audio") this.opts.onRemoteAudio(id, stream);
-      else if (track.kind === "video") this.opts.onRemoteScreen(id, stream);
+      if (track.kind === "audio") {
+        if (entry.screenStreamId && stream.id === entry.screenStreamId) this.opts.onRemoteScreenAudio?.(id, stream);
+        else this.opts.onRemoteAudio(id, stream);
+      } else if (track.kind === "video") this.opts.onRemoteScreen(id, stream);
     };
 
     entry.watchdog = setInterval(() => this.watch(entry), WATCHDOG_INTERVAL_MS);
@@ -360,6 +377,7 @@ export class CallMesh {
     pc.ontrack = null;
     try { pc.close(); } catch { /* already closed */ }
     this.opts.onRemoteScreen(id, null);
+    this.opts.onRemoteScreenAudio?.(id, null);
     this.opts.onPeerClosed(id);
   }
 
@@ -390,6 +408,11 @@ export class CallMesh {
 
   private async processSignal(entry: Entry, payload: SignalPayload) {
     if (entry.closed) return;
+    if (payload.kind === "screen-info") {
+      entry.screenStreamId = typeof payload.streamId === "string" ? payload.streamId : null;
+      if (!entry.screenStreamId) this.opts.onRemoteScreenAudio?.(entry.id, null);
+      return;
+    }
     const pc = entry.pc;
     try {
       if (payload.kind === "offer" || payload.kind === "answer") {
@@ -560,10 +583,18 @@ export class CallMesh {
     const stream = this.screenStream;
     const track = stream?.getVideoTracks()[0];
     if (!stream || !track || entry.screenSender || entry.closed) return;
+    /* The viewer must learn which stream is "the screen" BEFORE the offer that
+       carries it, so tab sound is never mistaken for the presenter's voice.
+       Signals are delivered in order, and the offer is only created after this runs. */
+    this.signal(entry, { kind: "screen-info", streamId: stream.id });
     try {
       entry.screenSender = entry.pc.addTrack(track, stream);
     } catch {
       entry.screenSender = null;
+    }
+    const audio = stream.getAudioTracks()[0];
+    if (audio) {
+      try { entry.screenAudioSender = entry.pc.addTrack(audio, stream); } catch { entry.screenAudioSender = null; }
     }
   }
 

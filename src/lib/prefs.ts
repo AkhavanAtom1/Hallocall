@@ -16,6 +16,11 @@ export type Prefs = {
   pushToTalk: boolean;
   soundJoinLeave: boolean;
   soundMessage: boolean;
+  /** Live captions of your own speech (needs a browser with speech recognition). */
+  captions: boolean;
+  captionLang: string;
+  /** Offer to share the tab/system sound together with the screen. */
+  shareAudio: boolean;
   /** Volume (0..1) you chose for each person, keyed by user id. */
   volumes: Record<string, number>;
 };
@@ -31,6 +36,9 @@ export const DEFAULT_PREFS: Prefs = {
   pushToTalk: false,
   soundJoinLeave: true,
   soundMessage: true,
+  captions: false,
+  captionLang: "fa-IR",
+  shareAudio: true,
   volumes: {},
 };
 
@@ -58,6 +66,9 @@ export function sanitizePrefs(raw: unknown): Prefs {
     pushToTalk: bool(source.pushToTalk, DEFAULT_PREFS.pushToTalk),
     soundJoinLeave: bool(source.soundJoinLeave, DEFAULT_PREFS.soundJoinLeave),
     soundMessage: bool(source.soundMessage, DEFAULT_PREFS.soundMessage),
+    captions: bool(source.captions, DEFAULT_PREFS.captions),
+    captionLang: typeof source.captionLang === "string" && /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})?$/.test(source.captionLang) ? source.captionLang : DEFAULT_PREFS.captionLang,
+    shareAudio: bool(source.shareAudio, DEFAULT_PREFS.shareAudio),
     volumes,
   };
 }

@@ -22,6 +22,10 @@
       {
         "name": "CALL_ROOMS",
         "class_name": "CallRoom"
+      },
+      {
+        "name": "USER_HUBS",
+        "class_name": "UserHub"
       }
     ]
   },
@@ -29,6 +33,10 @@
     {
       "tag": "v1",
       "new_sqlite_classes": ["CallRoom"]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["UserHub"]
     }
   ],
   "vars": {

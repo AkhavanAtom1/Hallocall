@@ -4,6 +4,7 @@ import { api } from "./lib/api";
 import { AVATAR_CATEGORIES, AVATARS, DEFAULT_AVATAR, avatarOf, faNum } from "./lib/avatars";
 import type { Friend, FriendRequest, IncomingCall, RecentCall, User } from "./lib/types";
 import { playSound } from "./lib/sounds";
+import { startUserChannel, useLiveRefresh } from "./lib/userChannel";
 import { Icon } from "./components/Icon";
 import { AvatarImage } from "./components/AvatarImage";
 import { AvatarPicker } from "./components/AvatarPicker";
@@ -20,10 +21,11 @@ import { startSpecialPalette } from "./lib/specialPalette";
 
 type Route = { page:"login" } | { page:"dashboard" } | { page:"friends" } | { page:"profiles" } | { page:"calls" } | { page:"call"; code:string };
 
-/** Pages that surface requests (friends, dashboard, incoming calls) re-fetch on this
- * cadence so friend requests / call invites appear within a second or two without a
- * manual reload. */
+/** Fallback cadence while the live channel (`/ws/user`) is not connected: friend
+ * requests and call invites then show up within a second or two. When the channel
+ * is up the server pushes them instantly and this only runs as a slow safety net. */
 const AUTO_REFRESH_MS = 1500;
+const SAFETY_REFRESH_MS = 12000;
 
 /** Direct /call/<code> links must survive the login screen: a visitor who opens a
  * shared invite link logs in (or registers) and lands straight inside that call. */
@@ -89,7 +91,9 @@ export function App() {
   useEffect(()=>{ let active=true; api.me().then((d)=>{if(active)setUser(d.user)}).catch(()=>{}).finally(()=>{if(active)setBooting(false)}); return()=>{active=false}; },[]);
   useEffect(()=>{ if(booting)return; if(user && route.page==="login")go(takeReturnPath() ?? "/dashboard"); else if(!user && route.page!=="login"){ if(route.page==="call")stashReturnPath(); go("/login"); } },[booting,user,route.page,go]);
   useEffect(()=>{ if (!user) return; api.touch().catch(()=>{}); const id=setInterval(()=>api.touch().catch(()=>{}),10000); return()=>clearInterval(id); },[user]);
-  useEffect(()=>{ if(!user || route.page==="call") return; let active=true; const poll=async()=>{ try { const d=await api.incoming(); if(active) setIncoming(d.calls[0]??null);} catch{} }; poll(); const id=setInterval(poll,AUTO_REFRESH_MS); return()=>{active=false;clearInterval(id)}; },[user,route.page]);
+  const userId=user?.id;
+  useEffect(()=>{ if(!userId) return; return startUserChannel(); },[userId]);
+  useLiveRefresh(async()=>{ const d=await api.incoming(); setIncoming(d.calls[0]??null); },"incoming",{ enabled:!!user && route.page!=="call", fastMs:AUTO_REFRESH_MS, slowMs:SAFETY_REFRESH_MS });
   useEffect(()=>{ if(!toast) return; const id=setTimeout(()=>setToast(undefined),2500); return()=>clearTimeout(id); },[toast]);
 
   const logout=async()=>{ await api.logout().catch(()=>{}); setUser(null); go("/login"); };
@@ -231,7 +235,7 @@ function PageTop({eyebrow,title,desc,action,themeControls}:{eyebrow:string;title
 function Dashboard({user,go,onToast,themeControls}:{user:User;go:(s:string)=>void;onToast:(s:string)=>void;themeControls:ReactNode}){
   const [friends,setFriends]=useState<Friend[]>([]);
   const inviting=useRef<string | null>(null);
-  useEffect(()=>{let active=true;const load=()=>api.friends().then(d=>{if(active)setFriends(d.friends)}).catch(()=>{});load();const id=setInterval(load,AUTO_REFRESH_MS);return()=>{active=false;clearInterval(id)};},[]);
+  useLiveRefresh(()=>api.friends().then(d=>setFriends(d.friends)),"friends",{ fastMs:AUTO_REFRESH_MS, slowMs:SAFETY_REFRESH_MS });
   const online=friends.filter(f=>f.online);
   const quickCall=async(friend:Friend)=>{if(inviting.current)return;inviting.current=friend.id;try{const d=await api.invite(friend.id);onToast(`درخواست تماس برای ${friend.username} ارسال شد`);go(`/call/${d.call.code}`);}catch(e){onToast(e instanceof Error?e.message:"خطا")}finally{inviting.current=null}};
 
@@ -317,7 +321,7 @@ function Friends({user,go,onToast,themeControls}:{user:User;go:(s:string)=>void;
   const searchVersion=useRef(0);
   const inviting=useRef<string | null>(null);
   const load=useCallback(()=>api.friends().then(d=>{setFriends(d.friends);setRequests(d.requests)}).catch(()=>{}),[]);
-  useEffect(()=>{load();const id=setInterval(load,AUTO_REFRESH_MS);return()=>clearInterval(id)},[load]);
+  useLiveRefresh(load,"friends",{ fastMs:AUTO_REFRESH_MS, slowMs:SAFETY_REFRESH_MS });
   useEffect(()=>()=>{window.clearTimeout(timer.current);searchVersion.current++},[]);
   const search=(value:string)=>{
     setQ(value);
@@ -554,11 +558,11 @@ function IncomingOverlay({call,busy,onAccept,onDecline}:{call:IncomingCall;busy:
     const ring=window.setInterval(()=>playSound("ring",0.22),2600);
     const original=document.title;
     let flip=false;
-    const flash=window.setInterval(()=>{flip=!flip;document.title=flip?`📞 تماس از ${name}`:original},1000);
+    const flash=window.setInterval(()=>{flip=!flip;document.title=flip?`📞 ${call.kind==="join"?"دعوت از":"تماس از"} ${name}`:original},1000);
     let notification:Notification|null=null;
     try{
       if(typeof Notification!=="undefined"&&Notification.permission==="granted"&&document.visibilityState==="hidden"){
-        notification=new Notification(`تماس ورودی از ${name}`,{body:call.name,tag:"hallocall-incoming",icon:"/avatars/hallocall.webp"});
+        notification=new Notification(call.kind==="join"?`${name} شما را به تماس دعوت کرد`:`تماس ورودی از ${name}`,{body:call.name,tag:"hallocall-incoming",icon:"/avatars/hallocall.webp"});
         notification.onclick=()=>{window.focus();notification?.close()};
       }
     }catch{}
@@ -581,10 +585,10 @@ function IncomingOverlay({call,busy,onAccept,onDecline}:{call:IncomingCall;busy:
   },[]);
   return <div className="incoming-backdrop">
     <div ref={dialogRef} className="incoming-card glass" role="dialog" aria-modal="true" aria-label={`تماس ورودی از ${call.caller.username}`} tabIndex={-1}>
-      <div className="incoming-top"><span>تماس ورودی</span><div className="ring-dot" aria-hidden="true"><i/><i/><i/></div></div>
+      <div className="incoming-top"><span>{call.kind==="join"?"دعوت به تماس":"تماس ورودی"}</span><div className="ring-dot" aria-hidden="true"><i/><i/><i/></div></div>
       <div className="incoming-avatar" style={{"--accent":a.accent, background:a.gradient, boxShadow:`0 0 0 8px var(--panel), 0 0 60px ${a.glow}`} as CSSProperties}><AvatarImage avatar={a}/></div>
       <h3>{call.caller.username}</h3>
-      <p>{call.name}</p>
+      <p>{call.kind==="join"?`شما را به «${call.name}» دعوت کرد`:call.name}</p>
       <div className="incoming-actions">
         <GlowButton tone="rose" size="lg" className="round-big" icon="phoneOff" onClick={onDecline} disabled={busy} aria-label="رد تماس"/>
         <GlowButton tone="mint" size="lg" className="round-big" icon="call" onClick={onAccept} disabled={busy} aria-label="پاسخ دادن"/>

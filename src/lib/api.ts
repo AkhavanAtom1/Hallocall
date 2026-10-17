@@ -57,6 +57,7 @@ export const api = {
   respondCall: (inviteId: string, action: "accept" | "decline") => request<{ ok: true; code?: string }>("/api/calls/respond", { method: "POST", body: JSON.stringify({ inviteId, action }) }),
   join: (code: string) => request<{ ok: true; call: CallInfo }>(`/api/calls/${encodeURIComponent(code)}/join`, { method: "POST" }),
   leave: (code: string, transfer = false) => request<{ ok: true; hostId?: string }>(`/api/calls/${encodeURIComponent(code)}/leave`, { method: "POST", body: JSON.stringify({ transfer }) }),
+  inviteToCall: (code: string, friendId: string) => request<{ ok: true; inviteId: string }>(`/api/calls/${encodeURIComponent(code)}/invite`, { method: "POST", body: JSON.stringify({ friendId }) }),
   transferHost: (code: string, userId: string) => request<{ ok: true; hostId: string }>(`/api/calls/${encodeURIComponent(code)}/transfer`, { method: "POST", body: JSON.stringify({ userId }) }),
   recentCalls: () => request<{ calls: RecentCall[] }>("/api/calls/recent"),
 };

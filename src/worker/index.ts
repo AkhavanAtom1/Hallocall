@@ -4,6 +4,8 @@ import { SELECTABLE_AVATAR_IDS } from "../lib/types";
 export interface Env {
   HALLOCALL_DB: D1Database;
   CALL_ROOMS: DurableObjectNamespace;
+  /** One Durable Object per user: pushes "something changed" to that user's open tabs. */
+  USER_HUBS: DurableObjectNamespace;
   ASSETS: Fetcher;
   SESSION_TTL_DAYS: string;
   ONLINE_WINDOW_SECONDS: string;
@@ -257,7 +259,15 @@ type RoomMeta = {
   members: string[];
   boardOpen: boolean;
   boardDrawers: "all" | "host";
+  /** Who may share their screen. */
+  shareMode: "all" | "host";
+  /** Shared countdown started by the host. */
+  timer: { id: string; label: string; durationMs: number; endsAt: number } | null;
+  /** The current quick poll (one at a time). Votes are keyed by user id. */
+  poll: RoomPoll | null;
 };
+
+type RoomPoll = { id: string; question: string; options: string[]; votes: Record<string, number>; open: boolean; createdAt: number };
 
 type BoardStroke = { id: string; uid: string; tool: "pen" | "highlight" | "eraser"; color: string; size: number; pts: number[] };
 
@@ -274,8 +284,14 @@ const BOARD_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 const MEMBERS_MAX = 200;
 
 function defaultMeta(): RoomMeta {
-  return { hostId: "", locked: false, banned: [], members: [], boardOpen: false, boardDrawers: "all" };
+  return { hostId: "", locked: false, banned: [], members: [], boardOpen: false, boardDrawers: "all", shareMode: "all", timer: null, poll: null };
 }
+
+const TIMER_MIN_SECONDS = 10;
+const TIMER_MAX_SECONDS = 6 * 3600;
+const POLL_MAX_OPTIONS = 6;
+const CAPTION_MAX_CHARS = 280;
+const CAPTION_MAX_PER_SECOND = 8;
 
 export class CallRoom {
   private state: DurableObjectState;
@@ -284,6 +300,8 @@ export class CallRoom {
   private board: BoardStroke[] = [];
   private boardIndex = new Map<string, BoardStroke>();
   private boardChunks = 0;
+  /** Caption rate limiting (in memory only; losing it on hibernation is harmless). */
+  private captionWindow = new Map<string, { at: number; count: number }>();
   private loaded = false;
   private loading: Promise<void> | null = null;
 
@@ -307,6 +325,9 @@ export class CallRoom {
           ...meta,
           banned: Array.isArray(meta.banned) ? meta.banned.slice(0, MEMBERS_MAX) : [],
           members: Array.isArray(meta.members) ? meta.members.slice(0, MEMBERS_MAX) : [],
+          shareMode: meta.shareMode === "host" ? "host" : "all",
+          timer: meta.timer && typeof meta.timer === "object" ? meta.timer : null,
+          poll: meta.poll && typeof meta.poll === "object" ? meta.poll : null,
         };
       }
       const count = await this.state.storage.get<number>("board:n");
@@ -410,11 +431,41 @@ export class CallRoom {
   }
 
   private roomInfo() {
+    const timer = this.meta.timer;
+    const current = now();
+    /* The timer travels as "time left", so people whose clocks are wrong still agree. */
+    const activeTimer = timer && timer.endsAt + 60_000 > current
+      ? { id: timer.id, label: timer.label, durationMs: timer.durationMs, remainingMs: Math.max(0, timer.endsAt - current) }
+      : null;
     return {
       hostId: this.meta.hostId,
       locked: this.meta.locked,
       board: { open: this.meta.boardOpen, drawers: this.meta.boardDrawers },
+      shareMode: this.meta.shareMode,
+      timer: activeTimer,
     };
+  }
+
+  /** Poll as one person sees it: counts for everybody, plus their own vote. */
+  private pollView(userId: string) {
+    const poll = this.meta.poll;
+    if (!poll) return null;
+    const counts = poll.options.map(() => 0);
+    for (const choice of Object.values(poll.votes)) if (counts[choice] !== undefined) counts[choice] += 1;
+    return {
+      id: poll.id,
+      question: poll.question,
+      options: poll.options.map((text, index) => ({ text, count: counts[index] })),
+      open: poll.open,
+      total: Object.keys(poll.votes).length,
+      myVote: poll.votes[userId] ?? null,
+    };
+  }
+
+  private broadcastPoll() {
+    for (const [socket, peer] of this.connectedSockets()) {
+      try { socket.send(JSON.stringify({ type:"poll", poll:this.pollView(peer.id) })); } catch {}
+    }
   }
 
   private presence(except?: WebSocket) {
@@ -517,6 +568,7 @@ export class CallRoom {
         messages:this.messages,
       }));
       if (this.board.length) server.send(JSON.stringify({ type:"board-sync", strokes:this.board }));
+      if (this.meta.poll) server.send(JSON.stringify({ type:"poll", poll:this.pollView(id) }));
       this.broadcast(this.presence(), server);
       await this.scheduleSweep();
 
@@ -589,6 +641,13 @@ export class CallRoom {
         size?:number;
         pts?:unknown;
         end?:boolean;
+        mode?:string;
+        seconds?:number;
+        label?:string;
+        question?:string;
+        options?:unknown;
+        option?:number;
+        final?:boolean;
       };
 
       const current = now();
@@ -635,6 +694,10 @@ export class CallRoom {
 
       if (msg.type === "screen") {
         const wantsToShare = !!msg.active;
+        if (wantsToShare && this.meta.shareMode === "host" && !this.isHost(session)) {
+          try { ws.send(JSON.stringify({ type:"denied", action:"screen" })); } catch {}
+          return;
+        }
         if (wantsToShare) {
           /* One presenter at a time keeps the mesh upload budget sane. */
           const other = this.connectedSockets().find(([, peer]) => peer.id !== session.id && peer.sharing);
@@ -651,7 +714,8 @@ export class CallRoom {
       }
 
       /* ── host-only controls ── */
-      if (msg.type === "hand-lower" || msg.type === "mute-request" || msg.type === "kick" || msg.type === "lock" || msg.type === "board-open" || msg.type === "board-clear") {
+      if (msg.type === "hand-lower" || msg.type === "mute-request" || msg.type === "kick" || msg.type === "lock" || msg.type === "board-open" || msg.type === "board-clear"
+        || msg.type === "share-mode" || msg.type === "timer-start" || msg.type === "timer-stop" || msg.type === "poll-create" || msg.type === "poll-close" || msg.type === "poll-dismiss") {
         if (!this.isHost(session)) {
           try { ws.send(JSON.stringify({ type:"denied", action:msg.type })); } catch {}
           return;
@@ -719,6 +783,89 @@ export class CallRoom {
           this.broadcast({ type:"board-clear" });
           return;
         }
+
+        if (msg.type === "share-mode") {
+          this.meta.shareMode = msg.mode === "host" ? "host" : "all";
+          await this.saveMeta();
+          if (this.meta.shareMode === "host") {
+            /* Anyone currently presenting (other than the host) is stopped. */
+            for (const [socket, peer] of this.connectedSockets()) {
+              if (!peer.sharing || this.isHost(peer)) continue;
+              peer.sharing = false;
+              try { socket.serializeAttachment(peer); } catch {}
+              try { socket.send(JSON.stringify({ type:"screen-stopped", reason:"host-only" })); } catch {}
+            }
+          }
+          this.broadcast(this.presence());
+          return;
+        }
+
+        if (msg.type === "timer-start") {
+          const seconds = Math.round(Number(msg.seconds));
+          if (!Number.isFinite(seconds) || seconds < TIMER_MIN_SECONDS || seconds > TIMER_MAX_SECONDS) return;
+          const label = typeof msg.label === "string" ? msg.label.trim().slice(0, 40) : "";
+          this.meta.timer = { id: uuid(), label, durationMs: seconds * 1000, endsAt: now() + seconds * 1000 };
+          await this.saveMeta();
+          this.broadcast(this.presence());
+          return;
+        }
+
+        if (msg.type === "timer-stop") {
+          if (!this.meta.timer) return;
+          this.meta.timer = null;
+          await this.saveMeta();
+          this.broadcast(this.presence());
+          return;
+        }
+
+        if (msg.type === "poll-create") {
+          const question = typeof msg.question === "string" ? msg.question.trim().slice(0, 140) : "";
+          const options = Array.isArray(msg.options)
+            ? (msg.options as unknown[]).filter((item): item is string => typeof item === "string").map((item) => item.trim().slice(0, 60)).filter(Boolean).slice(0, POLL_MAX_OPTIONS)
+            : [];
+          if (!question || options.length < 2) return;
+          this.meta.poll = { id: uuid(), question, options, votes: {}, open: true, createdAt: now() };
+          await this.saveMeta();
+          this.broadcastPoll();
+          return;
+        }
+
+        if (msg.type === "poll-close") {
+          if (!this.meta.poll || !this.meta.poll.open) return;
+          this.meta.poll.open = false;
+          await this.saveMeta();
+          this.broadcastPoll();
+          return;
+        }
+
+        if (msg.type === "poll-dismiss") {
+          if (!this.meta.poll) return;
+          this.meta.poll = null;
+          await this.saveMeta();
+          this.broadcast({ type:"poll", poll:null });
+          return;
+        }
+        return;
+      }
+
+      if (msg.type === "poll-vote") {
+        const poll = this.meta.poll;
+        const choice = Math.round(Number(msg.option));
+        if (!poll || !poll.open || msg.id !== poll.id || !Number.isInteger(choice) || choice < 0 || choice >= poll.options.length) return;
+        poll.votes[session.id] = choice;
+        await this.saveMeta();
+        this.broadcastPoll();
+        return;
+      }
+
+      /* Live captions: short, never stored, rate-limited per speaker. */
+      if (msg.type === "caption") {
+        const text = typeof msg.text === "string" ? msg.text.trim().slice(0, CAPTION_MAX_CHARS) : "";
+        if (!text) return;
+        const slot = this.captionWindow.get(session.id);
+        if (!slot || current - slot.at >= 1000) this.captionWindow.set(session.id, { at: current, count: 1 });
+        else if (++slot.count > CAPTION_MAX_PER_SECOND) return;
+        this.broadcast({ type:"caption", uid:session.id, name:session.username, text, final:!!msg.final }, ws);
         return;
       }
 
@@ -862,6 +1009,79 @@ export class CallRoom {
   }
 }
 
+/**
+ * One Durable Object per user. The browser keeps a WebSocket to it; the Worker
+ * pokes it ("a friend request arrived", "someone is calling you") and every open
+ * tab of that user refreshes immediately instead of waiting for the next poll.
+ * Nothing is stored: it only relays "something changed" hints, the real data is
+ * always re-read through the normal authenticated API.
+ */
+export class UserHub {
+  private state: DurableObjectState;
+
+  constructor(state: DurableObjectState) {
+    this.state = state;
+    try { state.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong")); } catch {}
+  }
+
+  async fetch(request: Request) {
+    const url = new URL(request.url);
+
+    if (request.headers.get("Upgrade")?.toLowerCase() === "websocket") {
+      const userId = request.headers.get("x-user-id");
+      if (!userId) return new Response("Unauthorized", { status:401 });
+      /* A handful of tabs is normal; beyond that the oldest connections go. */
+      const open = this.state.getWebSockets();
+      while (open.length >= USER_HUB_MAX_SOCKETS) {
+        const oldest = open.shift();
+        try { oldest?.close(1000, "Too many connections"); } catch {}
+      }
+      const pair = new WebSocketPair();
+      const client = pair[0];
+      const server = pair[1];
+      this.state.acceptWebSocket(server);
+      server.serializeAttachment({ userId, at: now() });
+      try { server.send(JSON.stringify({ type:"hello" })); } catch {}
+      return new Response(null, { status:101, webSocket:client } as any);
+    }
+
+    if (url.pathname.endsWith("/notify") && request.method === "POST") {
+      const body = await request.json().catch(() => null) as { event?: unknown } | null;
+      const event = typeof body?.event === "string" ? body.event.slice(0, 32) : "";
+      if (!event) return json({ error:"event required" }, { status:400 });
+      const text = JSON.stringify({ type:"event", event });
+      let delivered = 0;
+      for (const socket of this.state.getWebSockets()) {
+        try { socket.send(text); delivered += 1; } catch {}
+      }
+      return json({ delivered });
+    }
+
+    return json({ error:"Not found" }, { status:404 });
+  }
+
+  async webSocketMessage() { /* clients only listen */ }
+
+  async webSocketClose(ws: WebSocket, code?: number, reason?: string) {
+    const safeCode = typeof code === "number" && code >= 1000 && code <= 4999 && ![1005, 1006, 1015].includes(code) ? code : 1000;
+    try { ws.close(safeCode, (reason ?? "").slice(0, 100)); } catch {}
+  }
+
+  async webSocketError() { /* the browser reconnects on its own */ }
+}
+
+const USER_HUB_MAX_SOCKETS = 8;
+
+/** Tell every open tab of `userId` that something changed ("incoming", "friends"). Never throws. */
+async function notifyUser(env: Env, userId: string, event: string) {
+  try {
+    if (!env.USER_HUBS || !userId) return;
+    await env.USER_HUBS.get(env.USER_HUBS.idFromName(userId)).fetch(new Request("https://user-hub.local/notify", {
+      method:"POST", headers:{ "content-type":"application/json" }, body:JSON.stringify({ event }),
+    }));
+  } catch { /* pushing is an optimisation; polling still works */ }
+}
+
 async function callDO(env: Env, code:string, req:Request, user:SafeUser, hostId = ""): Promise<Response> {
   const id = env.CALL_ROOMS.idFromName(code);
   const headers = new Headers(req.headers);
@@ -935,7 +1155,18 @@ async function runEnsureAuthDatabase(env: Env) {
       PRIMARY KEY (call_id, user_id)
     )`),
     env.HALLOCALL_DB.prepare(`CREATE INDEX IF NOT EXISTS call_members_user_idx ON call_members(user_id, last_joined_at)`),
+    env.HALLOCALL_DB.prepare(`CREATE TABLE IF NOT EXISTS rate_limits (
+      key TEXT PRIMARY KEY,
+      window_start INTEGER NOT NULL,
+      count INTEGER NOT NULL
+    )`),
   ]);
+  /* "join" invites ring someone into a call that is already running (declining
+     must not end that call). SQLite has no ADD COLUMN IF NOT EXISTS, so a
+     second run simply fails harmlessly. */
+  try {
+    await env.HALLOCALL_DB.prepare(`ALTER TABLE call_invites ADD COLUMN kind TEXT NOT NULL DEFAULT 'quick'`).run();
+  } catch { /* column already there */ }
 }
 
 /* The schema check used to run 16 statements on EVERY login and registration.
@@ -947,6 +1178,37 @@ function ensureAuthDatabase(env: Env) {
     throw error;
   });
   return authSchemaReady;
+}
+
+/* ── rate limiting (fixed window per key, stored in D1) ───────────────── */
+
+function clientIp(req: Request) {
+  return req.headers.get("cf-connecting-ip") || req.headers.get("x-forwarded-for")?.split(",")[0].trim() || "unknown";
+}
+
+/** Counts this attempt and says whether it is still within `limit` per `windowMs`. Fails open on database trouble. */
+async function rateLimit(env: Env, key: string, limit: number, windowMs: number): Promise<{ ok: boolean; retryAfter: number }> {
+  try {
+    await ensureAuthDatabase(env);
+    const at = now();
+    const row = await env.HALLOCALL_DB.prepare(`INSERT INTO rate_limits(key,window_start,count) VALUES(?1,?2,1)
+      ON CONFLICT(key) DO UPDATE SET
+        count = CASE WHEN window_start <= ?3 THEN 1 ELSE count + 1 END,
+        window_start = CASE WHEN window_start <= ?3 THEN ?2 ELSE window_start END
+      RETURNING count, window_start`).bind(key, at, at - windowMs).first<{ count:number; window_start:number }>();
+    if (Math.random() < 0.02) {
+      await env.HALLOCALL_DB.prepare(`DELETE FROM rate_limits WHERE window_start < ?1`).bind(at - 86_400_000).run();
+    }
+    if (!row || row.count <= limit) return { ok:true, retryAfter:0 };
+    return { ok:false, retryAfter:Math.max(1, Math.ceil((row.window_start + windowMs - at) / 1000)) };
+  } catch {
+    return { ok:true, retryAfter:0 };
+  }
+}
+
+function tooManyRequests(retryAfter: number) {
+  const minutes = retryAfter >= 90 ? `${Math.ceil(retryAfter / 60)} دقیقه` : `${retryAfter} ثانیه`;
+  return json({ error:`تعداد تلاش‌ها زیاد است. حدود ${minutes} بعد دوباره امتحان کن.` }, { status:429, headers:{ "retry-after":String(retryAfter) } });
 }
 
 async function api(env: Env, req: Request): Promise<Response> {
@@ -984,6 +1246,8 @@ async function api(env: Env, req: Request): Promise<Response> {
     const username = typeof body?.username === "string" ? body.username.trim() : "";
     const passwordProofValue = typeof body?.passwordProof === "string" ? body.passwordProof : "";
     const avatar = typeof body?.avatar === "string" && SELECTABLE_AVATARS.has(body.avatar) ? body.avatar : "ronaldo_red";
+    const registerLimit = await rateLimit(env, `register:ip:${clientIp(req)}`, 12, 3_600_000);
+    if (!registerLimit.ok) return tooManyRequests(registerLimit.retryAfter);
     if (!USERNAME_RE.test(username)) return json({ error:"نام کاربری باید ۳ تا ۲۰ کاراکتر و فقط شامل حروف انگلیسی، عدد یا _ باشد." }, { status:400 });
     if (!/^[A-Za-z0-9+/]{43}=$/.test(passwordProofValue)) return json({ error:"اثبات رمز عبور نامعتبر است. صفحه را تازه‌سازی و دوباره تلاش کن." }, { status:400 });
     const exists = await env.HALLOCALL_DB.prepare(`SELECT id FROM users WHERE username_lower=?1`).bind(username.toLowerCase()).first();
@@ -1014,6 +1278,12 @@ async function api(env: Env, req: Request): Promise<Response> {
     const username = typeof body?.username === "string" ? body.username.trim().toLowerCase() : "";
     const passwordProofValue = typeof body?.passwordProof === "string" ? body.passwordProof : "";
     if (!/^[A-Za-z0-9+/]{43}=$/.test(passwordProofValue)) return json({ error:"اثبات رمز عبور نامعتبر است. صفحه را تازه‌سازی و دوباره تلاش کن." }, { status:400 });
+    /* Brute-force protection: per account+network and per network. Generous enough for shared Wi-Fi. */
+    const ip = clientIp(req);
+    const byAccount = await rateLimit(env, `login:acct:${ip}:${username.toLowerCase().slice(0, 40)}`, 12, 600_000);
+    if (!byAccount.ok) return tooManyRequests(byAccount.retryAfter);
+    const byNetwork = await rateLimit(env, `login:ip:${ip}`, 80, 600_000);
+    if (!byNetwork.ok) return tooManyRequests(byNetwork.retryAfter);
     const row = await env.HALLOCALL_DB.prepare(`SELECT id,username,password_hash,avatar FROM users WHERE username_lower=?1 LIMIT 1`).bind(username).first<{id:string;username:string;password_hash:string;avatar:string}>();
     if (!row || !(await verifyPassword(passwordProofValue,row.password_hash))) return json({ error:"نام کاربری یا رمز عبور اشتباه است." }, { status:401 });
     const session = await buildSession(env, row.id);
@@ -1048,6 +1318,8 @@ async function api(env: Env, req: Request): Promise<Response> {
     const auth = await requireUser(env,req); if ("response" in auth) return auth.response;
     const q = (url.searchParams.get("q") ?? "").trim().toLowerCase();
     if (q.length < 2) return json({ users:[] });
+    const searchLimit = await rateLimit(env, `search:${auth.user.id}`, 90, 60_000);
+    if (!searchLimit.ok) return tooManyRequests(searchLimit.retryAfter);
     const pattern = likeContains(q);
     const rows = await env.HALLOCALL_DB.prepare(`SELECT id,username,avatar FROM users WHERE username_lower LIKE ?1 ESCAPE '\\' AND id<>?2 ORDER BY username_lower LIMIT 12`).bind(pattern,auth.user.id).all<{id:string;username:string;avatar:string}>();
     return json({ users:rows.results.map(safeUser) });
@@ -1076,6 +1348,8 @@ async function api(env: Env, req: Request): Promise<Response> {
     const body = await req.json().catch(() => null) as { userId?:unknown } | null;
     const userId = typeof body?.userId === "string" ? body.userId : "";
     if (!userId || userId===auth.user.id) return json({ error:"کاربر نامعتبر است." }, { status:400 });
+    const requestLimit = await rateLimit(env, `friend-request:${auth.user.id}`, 40, 3_600_000);
+    if (!requestLimit.ok) return tooManyRequests(requestLimit.retryAfter);
     const target = await env.HALLOCALL_DB.prepare(`SELECT id FROM users WHERE id=?1`).bind(userId).first();
     if (!target) return json({ error:"کاربر پیدا نشد." }, { status:404 });
     const existing = await friendshipBetween(env,auth.user.id,userId);
@@ -1096,6 +1370,7 @@ async function api(env: Env, req: Request): Promise<Response> {
         : "درخواست دوستی از قبل ارسال شده است.";
       return json({ error:message }, { status:409 });
     }
+    await notifyUser(env, userId, "friends");
     return json({ ok:true });
   }
   if (path === "/api/friends/respond" && method === "POST") {
@@ -1104,16 +1379,20 @@ async function api(env: Env, req: Request): Promise<Response> {
     const id = typeof body?.friendshipId === "string" ? body.friendshipId : "";
     const action = body?.action === "accept" ? "accepted" : body?.action === "decline" ? "declined" : null;
     if (!id || !action) return json({ error:"درخواست نامعتبر است." }, { status:400 });
-    const row = await env.HALLOCALL_DB.prepare(`SELECT id,addressee_id,status FROM friendships WHERE id=?1`).bind(id).first<{id:string;addressee_id:string;status:string}>();
+    const row = await env.HALLOCALL_DB.prepare(`SELECT id,requester_id,addressee_id,status FROM friendships WHERE id=?1`).bind(id).first<{id:string;requester_id:string;addressee_id:string;status:string}>();
     if (!row || row.addressee_id!==auth.user.id || row.status!=="pending") return json({ error:"درخواست پیدا نشد." }, { status:404 });
     await env.HALLOCALL_DB.prepare(`UPDATE friendships SET status=?1, responded_at=?2 WHERE id=?3`).bind(action,now(),id).run();
+    await notifyUser(env, row.requester_id, "friends");
+    await notifyUser(env, auth.user.id, "friends");
     return json({ ok:true });
   }
   if (path === "/api/friends/remove" && method === "DELETE") {
     const auth = await requireUser(env,req); if ("response" in auth) return auth.response;
     const body = await req.json().catch(() => null) as { friendshipId?:unknown } | null;
     const id = typeof body?.friendshipId === "string" ? body.friendshipId : "";
+    const gone = await env.HALLOCALL_DB.prepare(`SELECT requester_id,addressee_id FROM friendships WHERE id=?1 AND (requester_id=?2 OR addressee_id=?2)`).bind(id,auth.user.id).first<{requester_id:string;addressee_id:string}>();
     await env.HALLOCALL_DB.prepare(`DELETE FROM friendships WHERE id=?1 AND (requester_id=?2 OR addressee_id=?2)`).bind(id,auth.user.id).run();
+    if (gone) await notifyUser(env, gone.requester_id === auth.user.id ? gone.addressee_id : gone.requester_id, "friends");
     return json({ ok:true });
   }
 
@@ -1121,6 +1400,8 @@ async function api(env: Env, req: Request): Promise<Response> {
     const auth = await requireUser(env,req); if ("response" in auth) return auth.response;
     const body = await req.json().catch(() => null) as { name?:unknown } | null;
     const name = typeof body?.name === "string" && body.name.trim() ? body.name.trim().slice(0,64) : "Friend Call";
+    const createLimit = await rateLimit(env, `create-call:${auth.user.id}`, 40, 600_000);
+    if (!createLimit.ok) return tooManyRequests(createLimit.retryAfter);
     const code = await uniqueCallCode(env); const id = uuid();
     await env.HALLOCALL_DB.prepare(`INSERT INTO calls(id,code,host_id,name,status,created_at) VALUES(?1,?2,?3,?4,'waiting',?5)`).bind(id,code,auth.user.id,name,now()).run();
     return json({ call:{id,code,name,hostId:auth.user.id,status:"waiting",maxParticipants:MAX_CALL_PARTICIPANTS} });
@@ -1130,13 +1411,14 @@ async function api(env: Env, req: Request): Promise<Response> {
      never reaches the friend being called. */
   if (path === "/api/calls/incoming" && method === "GET") {
     const auth = await requireUser(env,req); if ("response" in auth) return auth.response;
+    await ensureAuthDatabase(env);
     const cutoff = now() - 120_000;
     await env.HALLOCALL_DB.prepare(`UPDATE call_invites SET status='expired',responded_at=?1 WHERE callee_id=?2 AND status='ringing' AND created_at<=?3`)
       .bind(now(),auth.user.id,cutoff).run();
-    const rows = await env.HALLOCALL_DB.prepare(`SELECT i.id invite_id,c.code,c.name,u.id caller_id,u.username caller_username,u.avatar caller_avatar
+    const rows = await env.HALLOCALL_DB.prepare(`SELECT i.id invite_id,i.kind,c.code,c.name,u.id caller_id,u.username caller_username,u.avatar caller_avatar
       FROM call_invites i JOIN calls c ON c.id=i.call_id JOIN users u ON u.id=i.caller_id WHERE i.callee_id=?1 AND i.status='ringing' AND c.status<>'ended' AND i.created_at>?2 ORDER BY i.created_at DESC LIMIT 8`)
-      .bind(auth.user.id,cutoff).all<{invite_id:string;code:string;name:string;caller_id:string;caller_username:string;caller_avatar:string}>();
-    return json({ calls:rows.results.map(r=>({inviteId:r.invite_id,code:r.code,name:r.name,caller:{id:r.caller_id,username:r.caller_username,avatar:r.caller_avatar}})) });
+      .bind(auth.user.id,cutoff).all<{invite_id:string;kind:string;code:string;name:string;caller_id:string;caller_username:string;caller_avatar:string}>();
+    return json({ calls:rows.results.map(r=>({inviteId:r.invite_id,kind:r.kind==="join"?"join":"quick",code:r.code,name:r.name,caller:{id:r.caller_id,username:r.caller_username,avatar:r.caller_avatar}})) });
   }
   /* Calls this account has been in recently, newest first (for "join again"). */
   if (path === "/api/calls/recent" && method === "GET") {
@@ -1166,6 +1448,8 @@ async function api(env: Env, req: Request): Promise<Response> {
     const auth = await requireUser(env,req); if ("response" in auth) return auth.response;
     const body = await req.json().catch(() => null) as { friendId?:unknown } | null;
     const friendId = typeof body?.friendId === "string" ? body.friendId : "";
+    const inviteLimit = await rateLimit(env, `invite:${auth.user.id}`, 40, 600_000);
+    if (!inviteLimit.ok) return tooManyRequests(inviteLimit.retryAfter);
     const friendship = await friendshipBetween(env,auth.user.id,friendId);
     if (!friendship || friendship.status!=="accepted") return json({ error:"این کاربر دوست شما نیست." }, { status:403 });
     const friend = await env.HALLOCALL_DB.prepare(`SELECT id,username,avatar FROM users WHERE id=?1`).bind(friendId).first<{id:string;username:string;avatar:string}>();
@@ -1179,15 +1463,51 @@ async function api(env: Env, req: Request): Promise<Response> {
       env.HALLOCALL_DB.prepare(`INSERT INTO calls(id,code,host_id,name,status,created_at) VALUES(?1,?2,?3,?4,'waiting',?5)`).bind(callId,code,auth.user.id,name,now()),
       env.HALLOCALL_DB.prepare(`INSERT INTO call_invites(id,call_id,caller_id,callee_id,status,created_at) VALUES(?1,?2,?3,?4,'ringing',?5)`).bind(inviteId,callId,auth.user.id,friendId,now()),
     ]);
+    await notifyUser(env, friendId, "incoming");
     return json({ inviteId, call:{id:callId,code,name,hostId:auth.user.id,status:"waiting",maxParticipants:MAX_CALL_PARTICIPANTS} });
   }
+
+  /* Ring a friend into a call that is already running (from inside the call). */
+  const inviteIntoCall = path.match(/^\/api\/calls\/([^/]+)\/invite$/);
+  if (inviteIntoCall && method === "POST") {
+    const auth = await requireUser(env,req); if ("response" in auth) return auth.response;
+    await ensureAuthDatabase(env);
+    const code = decodeURIComponent(inviteIntoCall[1]).toUpperCase();
+    const body = await req.json().catch(() => null) as { friendId?:unknown } | null;
+    const friendId = typeof body?.friendId === "string" ? body.friendId : "";
+    const limit = await rateLimit(env, `invite-into-call:${auth.user.id}`, 60, 600_000);
+    if (!limit.ok) return tooManyRequests(limit.retryAfter);
+    const call = await env.HALLOCALL_DB.prepare(`SELECT id,status FROM calls WHERE code=?1 LIMIT 1`).bind(code).first<{id:string;status:string}>();
+    if (!call || call.status === "ended") return json({ error:"این کال دیگر فعال نیست." }, { status:404 });
+    const friendship = friendId ? await friendshipBetween(env,auth.user.id,friendId) : null;
+    if (!friendship || friendship.status !== "accepted") return json({ error:"این کاربر دوست شما نیست." }, { status:403 });
+    let room: { participants?:Array<{id:string}>; locked?:boolean; banned?:string[] } = {};
+    try {
+      const res = await env.CALL_ROOMS.get(env.CALL_ROOMS.idFromName(code)).fetch(new Request("https://call-room.local/state"));
+      if (res.ok) room = await res.json();
+    } catch {}
+    const present = room.participants ?? [];
+    if (!present.some((p) => p.id === auth.user.id)) return json({ error:"برای دعوت کردن باید خودت داخل تماس باشی." }, { status:403 });
+    if (present.some((p) => p.id === friendId)) return json({ error:"این دوست همین الان در تماس است." }, { status:409 });
+    if ((room.banned ?? []).includes(friendId)) return json({ error:"میزبان این کاربر را از تماس حذف کرده است." }, { status:403 });
+    if (room.locked) return json({ error:"تماس قفل است؛ اول ورود را باز کن تا دوستت بتواند بیاید." }, { status:423 });
+    if (present.length >= MAX_CALL_PARTICIPANTS) return json({ error:"تماس پر است." }, { status:409 });
+    const recent = await env.HALLOCALL_DB.prepare(`SELECT id FROM call_invites WHERE call_id=?1 AND callee_id=?2 AND status='ringing' AND created_at>?3 LIMIT 1`).bind(call.id,friendId,now()-30_000).first();
+    if (recent) return json({ error:"برای این دوست همین الان یک دعوت در حال زنگ‌خوردن است." }, { status:409 });
+    const inviteId = uuid();
+    await env.HALLOCALL_DB.prepare(`INSERT INTO call_invites(id,call_id,caller_id,callee_id,status,created_at,kind) VALUES(?1,?2,?3,?4,'ringing',?5,'join')`).bind(inviteId,call.id,auth.user.id,friendId,now()).run();
+    await notifyUser(env, friendId, "incoming");
+    return json({ ok:true, inviteId });
+  }
+
   if (path === "/api/calls/respond" && method === "POST") {
     const auth = await requireUser(env,req); if ("response" in auth) return auth.response;
+    await ensureAuthDatabase(env);
     const body = await req.json().catch(() => null) as { inviteId?:unknown; action?:unknown } | null;
     const id = typeof body?.inviteId === "string" ? body.inviteId : "";
     const action = body?.action === "accept" ? "accepted" : body?.action === "decline" ? "declined" : null;
     if (!id || !action) return json({ error:"درخواست نامعتبر است." }, { status:400 });
-    const row = await env.HALLOCALL_DB.prepare(`SELECT i.id,c.code,c.status call_status,i.callee_id,i.call_id,i.status invite_status FROM call_invites i JOIN calls c ON c.id=i.call_id WHERE i.id=?1 LIMIT 1`).bind(id).first<{id:string;code:string;call_status:string;callee_id:string;call_id:string;invite_status:string}>();
+    const row = await env.HALLOCALL_DB.prepare(`SELECT i.id,i.kind,c.code,c.status call_status,i.callee_id,i.call_id,i.status invite_status FROM call_invites i JOIN calls c ON c.id=i.call_id WHERE i.id=?1 LIMIT 1`).bind(id).first<{id:string;kind:string;code:string;call_status:string;callee_id:string;call_id:string;invite_status:string}>();
     if (!row || row.callee_id!==auth.user.id || row.invite_status!=="ringing" || row.call_status==="ended") return json({ error:"این تماس دیگر در دسترس نیست." }, { status:409 });
     const respondedAt = now();
     const updated = await env.HALLOCALL_DB.prepare(`UPDATE call_invites SET status=?1,responded_at=?2 WHERE id=?3 AND callee_id=?4 AND status='ringing' AND EXISTS (SELECT 1 FROM calls WHERE id=call_invites.call_id AND status<>'ended')`)
@@ -1197,9 +1517,10 @@ async function api(env: Env, req: Request): Promise<Response> {
       const activated = await env.HALLOCALL_DB.prepare(`UPDATE calls SET status='active' WHERE id=?1 AND status<>'ended'`).bind(row.call_id).run();
       if (!activated.meta.changes) return json({ error:"این تماس دیگر در دسترس نیست." }, { status:409 });
       await env.HALLOCALL_DB.prepare(`UPDATE call_invites SET status='expired',responded_at=?1 WHERE callee_id=?2 AND status='ringing' AND id<>?3`).bind(respondedAt,auth.user.id,id).run();
-    } else {
+    } else if (row.kind !== "join") {
       /* The caller joins immediately while the invite is ringing. End active
-         quick-call rooms too, so a decline cannot leave the caller stranded. */
+         quick-call rooms too, so a decline cannot leave the caller stranded.
+         (An invite into a running group call never ends that call.) */
       await env.HALLOCALL_DB.prepare(`UPDATE calls SET status='ended',ended_at=?1 WHERE id=?2 AND status<>'ended'`).bind(respondedAt,row.call_id).run();
       const roomId = env.CALL_ROOMS.idFromName(row.code);
       try { await env.CALL_ROOMS.get(roomId).fetch(new Request("https://call-room.local/end")); } catch {}
@@ -1315,27 +1636,39 @@ async function api(env: Env, req: Request): Promise<Response> {
   return json({ error:"Not found" }, { status:404 });
 }
 
+/** WebSockets must come from this site (or from a local dev proxy). */
+function originAllowed(req: Request, url: URL) {
+  const origin = req.headers.get("Origin");
+  if (!origin) return true;
+  try {
+    const parsedOrigin = new URL(origin);
+    const forwardedHost = req.headers.get("x-forwarded-host")?.split(",")[0].trim();
+    const host = req.headers.get("host") || url.host;
+    const behindLocalProxy = ["localhost", "127.0.0.1", "::1"].includes(url.hostname);
+    const requestHost = behindLocalProxy ? (forwardedHost || host) : host;
+    return parsedOrigin.host.toLowerCase() === requestHost.toLowerCase() &&
+      (behindLocalProxy && forwardedHost ? true : parsedOrigin.origin === url.origin);
+  } catch {
+    return false;
+  }
+}
+
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
     try {
       if (url.pathname.startsWith("/api/")) return await api(env,req);
+      if (url.pathname === "/ws/user") {
+        if (!originAllowed(req, url)) return new Response("Forbidden", {status:403});
+        const user = await currentUser(env,req);
+        if (!user) return new Response("Unauthorized", {status:401});
+        if (!env.USER_HUBS) return new Response("Realtime channel unavailable", {status:503});
+        const headers = new Headers(req.headers);
+        headers.set("x-user-id", user.id);
+        return env.USER_HUBS.get(env.USER_HUBS.idFromName(user.id)).fetch(new Request(req, { headers }));
+      }
       if (url.pathname.startsWith("/ws/call/")) {
-        const origin = req.headers.get("Origin");
-        if (origin) {
-          try {
-            const parsedOrigin = new URL(origin);
-            const forwardedHost = req.headers.get("x-forwarded-host")?.split(",")[0].trim();
-            const host = req.headers.get("host") || url.host;
-            const behindLocalProxy = ["localhost", "127.0.0.1", "::1"].includes(url.hostname);
-            const requestHost = behindLocalProxy ? (forwardedHost || host) : host;
-            const sameOrigin = parsedOrigin.host.toLowerCase() === requestHost.toLowerCase() &&
-              (behindLocalProxy && forwardedHost ? true : parsedOrigin.origin === url.origin);
-            if (!sameOrigin) return new Response("Forbidden", {status:403});
-          } catch {
-            return new Response("Forbidden", {status:403});
-          }
-        }
+        if (!originAllowed(req, url)) return new Response("Forbidden", {status:403});
         const user = await currentUser(env,req);
         if (!user) return new Response("Unauthorized", {status:401});
         const code = decodeURIComponent(url.pathname.split("/").pop() || "").toUpperCase();

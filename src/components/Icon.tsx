@@ -43,6 +43,11 @@ export function Icon({ name, size = 20, stroke = 1.9 }: { name: string; size?: n
     eraser: <><path d="M20 20H9L4 15a2 2 0 0 1 0-3l8-8a2 2 0 0 1 3 0l5 5a2 2 0 0 1 0 3l-7 8"/></>,
     highlighter: <><path d="M9 14l6-6 3 3-6 6H9zM9 17l-3 3h4M13 7l4 4"/></>,
     keyboard: <><rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></>,
+    clock: <><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></>,
+    poll: <><path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/></>,
+    captions: <><rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M7 11h3M7 15h5M14 11h3M16 15h1"/></>,
+    userPlus: <><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M19 8v6M16 11h6"/></>,
+    fileText: <><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h6"/></>,
     expand: <><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></>,
     mask: <><path d="M3.6 5.6c5.6-1.3 11.2-1.3 16.8 0 .4 6.5-2.2 11.7-8.4 13.7-6.2-2-8.8-7.2-8.4-13.7Z"/><path d="M8.1 9.5c.9-.7 2-.7 2.9 0M13 9.5c.9-.7 2-.7 2.9 0M9 14.4c1.9 1.3 4.1 1.3 6 0"/></>,
   };

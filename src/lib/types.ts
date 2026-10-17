@@ -68,6 +68,8 @@ export type CallInfo = {
 
 export type IncomingCall = {
   inviteId: string;
+  /** "join" = a friend is ringing you into a call that is already running. */
+  kind?: "quick" | "join";
   code: string;
   name: string;
   caller: User;
@@ -94,6 +96,20 @@ export type RoomInfo = {
   hostId: string;
   locked: boolean;
   board: { open: boolean; drawers: "all" | "host" };
+  /** Who may share their screen. */
+  shareMode: "all" | "host";
+  /** Shared countdown, as "time left" so wrong device clocks do not matter. */
+  timer: { id: string; label: string; durationMs: number; remainingMs: number } | null;
+};
+
+/** A quick poll as seen by one participant. */
+export type PollView = {
+  id: string;
+  question: string;
+  options: Array<{ text: string; count: number }>;
+  open: boolean;
+  total: number;
+  myVote: number | null;
 };
 
 /** A call this account was in recently (the "join again" list). */

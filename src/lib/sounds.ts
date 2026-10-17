@@ -4,7 +4,7 @@
  * it make noise after a user gesture, which is always true by the time a call
  * is joined or a ringtone is needed.
  */
-export type SoundKind = "join" | "leave" | "hand" | "message" | "ring" | "test" | "rec";
+export type SoundKind = "join" | "leave" | "hand" | "message" | "ring" | "test" | "rec" | "timer";
 
 let shared: AudioContext | null = null;
 
@@ -28,6 +28,7 @@ const NOTES: Record<SoundKind, Array<[number, number]>> = {
   ring: [[480, 0.18], [620, 0.22], [480, 0.18], [620, 0.22]],
   test: [[523, 0.14], [659, 0.14], [784, 0.2]],
   rec: [[880, 0.1], [880, 0.1]],
+  timer: [[880, 0.14], [660, 0.14], [880, 0.14], [1175, 0.28]],
 };
 
 export function playSound(kind: SoundKind, volume = 0.16, sinkId?: string) {

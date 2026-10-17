@@ -5,7 +5,7 @@ import { getIceServers, audioBitrateForQuality } from "../lib/webrtc";
 import { CallMesh } from "../lib/mesh";
 import type { SignalPayload } from "../lib/mesh";
 import { avatarOf } from "../lib/avatars";
-import type { CallInfo, Participant, RoomInfo, User } from "../lib/types";
+import type { CallInfo, Participant, PollView, RoomInfo, User } from "../lib/types";
 import { MAX_CALL_PARTICIPANTS } from "../lib/call";
 import { BoardStore } from "../lib/board";
 import type { Stroke, StrokeFragment } from "../lib/board";
@@ -17,10 +17,16 @@ import { worstLevel, QUALITY_LABELS } from "../lib/quality";
 import type { PeerQuality } from "../lib/quality";
 import { CallRecorder, recordingFileName, recordingSupported } from "../lib/recorder";
 import { playSound } from "../lib/sounds";
+import { Captioner, captionsSupported } from "../lib/captions";
+import { buildTranscript, transcriptFileName } from "../lib/transcript";
+import type { TranscriptEntry } from "../lib/transcript";
 import { AppAvatar } from "./AppAvatar";
 import { AvatarImage } from "./AvatarImage";
+import { CaptionsOverlay, PollCard, PollSheet, TimerChip, TimerSheet } from "./CallExtras";
+import type { CaptionLine } from "./CallExtras";
 import { GlowButton } from "./GlowButton";
 import { Icon } from "./Icon";
+import { InviteSheet } from "./InviteSheet";
 import { Lobby } from "./Lobby";
 import type { JoinChoice } from "./Lobby";
 import { PeoplePanel, SignalBars } from "./PeoplePanel";
@@ -76,9 +82,14 @@ type RoomSocketMessage = {
   size?: number;
   pts?: number[];
   end?: boolean;
+  poll?: PollView | null;
+  name?: string;
+  text?: string;
+  final?: boolean;
+  reason?: string;
 };
 
-const EMPTY_ROOM: RoomInfo = { hostId: "", locked: false, board: { open: false, drawers: "all" } };
+const EMPTY_ROOM: RoomInfo = { hostId: "", locked: false, board: { open: false, drawers: "all" }, shareMode: "all", timer: null };
 const sleep = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 
 async function copyText(value: string) {
@@ -219,6 +230,12 @@ export function CallPage({
   const [localMuted, setLocalMuted] = useState<Record<string, boolean>>({});
   const [devices, setDevices] = useState<DeviceLists>({ mics: [], speakers: [] });
   const [enteredAt, setEnteredAt] = useState(0);
+  const [poll, setPoll] = useState<PollView | null>(null);
+  const [pollHidden, setPollHidden] = useState("");
+  const [captionLines, setCaptionLines] = useState<CaptionLine[]>([]);
+  const [timerSheet, setTimerSheet] = useState(false);
+  const [pollSheet, setPollSheet] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
 
   const active = joined && entered;
 
@@ -233,6 +250,9 @@ export function CallPage({
   const handUpRef = useRef(false);
   const audioEls = useRef(new Map<string, HTMLAudioElement>());
   const remoteStreams = useRef(new Map<string, MediaStream>());
+  const screenAudioEls = useRef(new Map<string, HTMLAudioElement>());
+  const screenAudioStreams = useRef(new Map<string, MediaStream>());
+  const transcriptRef = useRef<TranscriptEntry[]>([]);
   const recorderRef = useRef<CallRecorder | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserCleanup = useRef(new Map<string, () => void>());
@@ -334,9 +354,28 @@ export function CallPage({
     }
     remoteStreams.current.delete(id);
     recorderRef.current?.removeStream(id);
+    const screenAudio = screenAudioEls.current.get(id);
+    if (screenAudio) {
+      screenAudio.pause();
+      screenAudio.srcObject = null;
+      screenAudio.remove();
+      screenAudioEls.current.delete(id);
+    }
+    screenAudioStreams.current.delete(id);
+    recorderRef.current?.removeStream(`screen:${id}`);
     analyserCleanup.current.get(id)?.();
     analyserCleanup.current.delete(id);
     speakingState.current.delete(id);
+  }, []);
+
+  /** One caption line per speaker (the newest wins); finished sentences also go to the transcript. */
+  const pushCaption = useCallback((uid: string, name: string, text: string, final: boolean, self: boolean) => {
+    const at = Date.now();
+    setCaptionLines((current) => [...current.filter((line) => line.uid !== uid), { uid, name, text, final, at, self }].slice(-6));
+    if (final) {
+      transcriptRef.current.push({ at, name, text, kind: "speech" });
+      if (transcriptRef.current.length > 3000) transcriptRef.current.splice(0, transcriptRef.current.length - 3000);
+    }
   }, []);
 
   const syncParticipants = useCallback((list: Participant[], silent = false) => {
@@ -611,6 +650,35 @@ export function CallPage({
           return copy;
         });
       },
+      onRemoteScreenAudio: (id, stream) => {
+        const existing = screenAudioEls.current.get(id);
+        if (!stream) {
+          if (existing) {
+            existing.pause();
+            existing.srcObject = null;
+            existing.remove();
+            screenAudioEls.current.delete(id);
+          }
+          screenAudioStreams.current.delete(id);
+          recorderRef.current?.removeStream(`screen:${id}`);
+          return;
+        }
+        let audio = existing;
+        if (!audio) {
+          audio = new Audio();
+          audio.autoplay = true;
+          audio.setAttribute("playsinline", "");
+          audio.setAttribute("aria-hidden", "true");
+          audio.style.cssText = "position:fixed;width:1px;height:1px;left:-10px;top:-10px;opacity:0;pointer-events:none";
+          document.body.appendChild(audio);
+          screenAudioEls.current.set(id, audio);
+        }
+        audio.srcObject = stream;
+        tuneAudio(id, audio);
+        void audio.play().catch(() => setPlaybackBlocked(true));
+        screenAudioStreams.current.set(id, stream);
+        recorderRef.current?.addStream(`screen:${id}`, stream);
+      },
       onPeerClosed: (id) => {
         cleanupRemote(id);
         setQualityById((current) => {
@@ -718,7 +786,24 @@ export function CallPage({
       }
 
       if (message.type === "denied") {
-        notify("این کار فقط برای میزبان مجاز است.");
+        notify(message.action === "screen" ? "میزبان اشتراک صفحه را فقط برای خودش باز گذاشته است." : "این کار فقط برای میزبان مجاز است.");
+        return;
+      }
+
+      if (message.type === "screen-stopped") {
+        stopScreenShare(false);
+        notify("میزبان اشتراک صفحه را فقط برای خودش باز گذاشته است؛ اشتراک تو متوقف شد.");
+        return;
+      }
+
+      if (message.type === "poll") {
+        setPoll(message.poll ?? null);
+        return;
+      }
+
+      if (message.type === "caption" && message.uid && typeof message.text === "string") {
+        /* Only people who turned captions on get to see them. */
+        if (prefsRef.current.captions) pushCaption(message.uid, message.name ?? "", message.text, !!message.final, false);
         return;
       }
 
@@ -1021,6 +1106,7 @@ export function CallPage({
   /* Per-person volume, local mute and speaker choice apply to live audio. */
   useEffect(() => {
     for (const [id, audio] of audioEls.current) tuneAudio(id, audio);
+    for (const [id, audio] of screenAudioEls.current) tuneAudio(id, audio);
   }, [prefs.volumes, prefs.speakerId, localMuted, tuneAudio]);
 
   /* Push-to-talk: switching it on closes the mic until Space is held; switching it
@@ -1068,11 +1154,76 @@ export function CallPage({
 
   const sharerNow = participants.find((participant) => participant.sharing);
   const someoneElseSharing = !!sharerNow && sharerNow.id !== user.id;
+  const captionsOn = prefs.captions;
+  const iAmMuted = !!participants.find((participant) => participant.id === user.id)?.muted;
   const hostId = roomInfo.hostId || call?.hostId || "";
   const isHost = !!hostId && hostId === user.id;
+  const shareBlocked = roomInfo.shareMode === "host" && !isHost;
   const recorders = participants.filter((participant) => participant.rec);
   const peerLevels = participants.filter((participant) => participant.id !== user.id).map((participant) => qualityById[participant.id]?.level ?? (participant.connected === false ? 0 : 3));
   const networkLevel = worstLevel(peerLevels as Array<0 | 1 | 2 | 3>);
+
+  /* Live captions: recognise my own speech while captions are on, my mic is open and the browser can do it. */
+  useEffect(() => {
+    if (!active || !captionsOn || !captionsSupported() || !microphoneReady || iAmMuted) return;
+    let lastSent = 0;
+    let pending: string | null = null;
+    let timer: number | null = null;
+    const flushInterim = () => {
+      timer = null;
+      if (pending) { send({ type: "caption", text: pending, final: false }); lastSent = Date.now(); pending = null; }
+    };
+    const captioner = new Captioner(
+      prefs.captionLang,
+      (text, final) => {
+        pushCaption(userRef.current.id, userRef.current.username, text, final, true);
+        if (final) {
+          if (timer !== null) { window.clearTimeout(timer); timer = null; }
+          pending = null;
+          send({ type: "caption", text, final: true });
+          return;
+        }
+        pending = text;
+        const wait = 400 - (Date.now() - lastSent);
+        if (wait <= 0) flushInterim();
+        else if (timer === null) timer = window.setTimeout(flushInterim, wait);
+      },
+      (state) => {
+        if (state === "blocked") {
+          notify("اجازهٔ تشخیص گفتار داده نشد؛ زیرنویس زنده خاموش شد.");
+          updatePrefs({ captions: false });
+        }
+      },
+    );
+    captioner.start();
+    return () => {
+      captioner.stop();
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, [active, captionsOn, prefs.captionLang, microphoneReady, iAmMuted, send, pushCaption, notify, updatePrefs]);
+
+  const noticedNoRecognition = useRef(false);
+  useEffect(() => {
+    if (!active || !captionsOn || captionsSupported() || noticedNoRecognition.current) return;
+    noticedNoRecognition.current = true;
+    notify("این مرورگر نمی‌تواند گفتار تو را به متن تبدیل کند؛ فقط زیرنویس دیگران را می‌بینی. برای زیرنویس گفتار خودت Chrome یا Edge را امتحان کن.");
+  }, [active, captionsOn, notify]);
+
+  /* Old caption lines disappear on their own. */
+  useEffect(() => {
+    if (!captionLines.length) return;
+    const timer = window.setInterval(() => {
+      const cutoff = Date.now() - 9000;
+      setCaptionLines((current) => {
+        const next = current.filter((line) => line.at > cutoff);
+        return next.length === current.length ? current : next;
+      });
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [captionLines.length]);
+
+  /* Turning captions off clears what is on screen. */
+  useEffect(() => { if (!captionsOn) setCaptionLines([]); }, [captionsOn]);
 
   /* ───────────── actions ───────────── */
 
@@ -1097,6 +1248,10 @@ export function CallPage({
       notify("مرورگر این دستگاه اشتراک‌گذاری صفحه را پشتیبانی نمی‌کند. روی لپ‌تاپ یا کامپیوتر (Chrome، Edge، Firefox یا Safari) امتحان کن؛ در بیشتر مرورگرهای موبایل این قابلیت وجود ندارد.");
       return;
     }
+    if (shareBlocked) {
+      notify("میزبان اشتراک صفحه را فقط برای خودش باز گذاشته است.");
+      return;
+    }
     if (someoneElseSharing) {
       notify(`${sharerNow?.username ?? "یک نفر"} همین حالا صفحه‌اش را نشان می‌دهد؛ هم‌زمان فقط یک نفر می‌تواند.`);
       return;
@@ -1106,8 +1261,16 @@ export function CallPage({
       return;
     }
     let stream: MediaStream;
+    const wantAudio = prefsRef.current.shareAudio;
+    const video = { frameRate: { ideal: 15, max: 30 } };
     try {
-      stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 15, max: 30 } }, audio: false });
+      try {
+        /* Ask for the tab/system sound too; the picker shows a "share audio" checkbox where the browser supports it. */
+        stream = await navigator.mediaDevices.getDisplayMedia({ video, audio: wantAudio ? ({ suppressLocalAudioPlayback: true } as MediaTrackConstraints) : false });
+      } catch (cause) {
+        if (wantAudio && cause instanceof TypeError) stream = await navigator.mediaDevices.getDisplayMedia({ video, audio: false });
+        else throw cause;
+      }
     } catch (cause) {
       const name = cause instanceof DOMException ? cause.name : "";
       if (name !== "NotAllowedError" && name !== "AbortError") notify("شروع اشتراک‌گذاری صفحه ممکن نشد. دوباره امتحان کن.");
@@ -1125,6 +1288,7 @@ export function CallPage({
     sharingRef.current = true;
     setSharing(true);
     meshRef.current.startScreen(stream);
+    if (stream.getAudioTracks().length) notify("صدای تب یا سیستم هم برای بقیه پخش می‌شود. اگر نمی‌خواهی، اشتراک را متوقف کن و بدون تیک «Share audio» دوباره شروع کن.");
     if (!send({ type: "screen", active: true })) {
       stopScreenShare(false);
       notify("اتصال قطع شد؛ اشتراک‌گذاری صفحه شروع نشد.");
@@ -1134,6 +1298,30 @@ export function CallPage({
   const toggleScreenShare = () => {
     if (sharingRef.current) stopScreenShare(true);
     else void startScreenShare();
+  };
+
+  const toggleShareMode = () => { send({ type: "share-mode", mode: roomInfo.shareMode === "host" ? "all" : "host" }); };
+
+  const toggleCaptions = () => {
+    const next = !prefsRef.current.captions;
+    updatePrefs({ captions: next });
+    if (next && !captionsSupported()) return; // the effect explains it
+    notify(next ? "زیرنویس زنده روشن شد." : "زیرنویس زنده خاموش شد.");
+  };
+
+  const startTimer = (seconds: number, label: string) => { send({ type: "timer-start", seconds, label }); };
+  const stopTimer = () => { send({ type: "timer-stop" }); };
+  const createPoll = (question: string, options: string[]) => { send({ type: "poll-create", question, options }); };
+  const votePoll = (option: number) => { if (poll) send({ type: "poll-vote", id: poll.id, option }); };
+
+  const saveTranscript = () => {
+    const entries: TranscriptEntry[] = [
+      ...transcriptRef.current,
+      ...messages.map((message) => ({ at: message.createdAt, name: message.userId === user.id ? user.username : message.username, text: message.text, kind: "chat" as const })),
+    ];
+    const text = buildTranscript({ callName: call?.name ?? "Call", code, entries });
+    downloadBlob(new Blob(["\ufeff", text], { type: "text/plain;charset=utf-8" }), transcriptFileName(code, new Date()));
+    notify(entries.length ? "گفتگو ذخیره شد." : "هنوز چیزی برای ذخیره نیست؛ فایل خالی ذخیره شد.");
   };
 
   const toggleRecording = async () => {
@@ -1156,6 +1344,7 @@ export function CallPage({
       const recorder = new CallRecorder(context);
       if (local.current) recorder.addStream("local", local.current);
       for (const [id, stream] of remoteStreams.current) recorder.addStream(id, stream);
+      for (const [id, stream] of screenAudioStreams.current) recorder.addStream(`screen:${id}`, stream);
       recorder.start();
       recorderRef.current = recorder;
       setRecording({ since: Date.now() });
@@ -1187,7 +1376,7 @@ export function CallPage({
     let failed = false;
     const context = audioContextRef.current;
     if (context?.state === "suspended") await context.resume().catch(() => {});
-    await Promise.all(Array.from(audioEls.current.entries()).map(async ([id, audio]) => {
+    await Promise.all([...Array.from(audioEls.current.entries()), ...Array.from(screenAudioEls.current.entries())].map(async ([id, audio]) => {
       audio.muted = !!localMutedRef.current[id];
       try { await audio.play(); } catch { failed = true; }
     }));
@@ -1322,6 +1511,9 @@ export function CallPage({
       setPanel(null);
       setSettingsOpen(false);
       setLeaveDialog(false);
+      setTimerSheet(false);
+      setPollSheet(false);
+      setInviteOpen(false);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -1406,6 +1598,7 @@ export function CallPage({
           {networkLevel !== null && participants.length > 1 && <><small>•</small><span className="net-pill" title={`کیفیت اتصال: ${QUALITY_LABELS[networkLevel]}`}><SignalBars level={networkLevel} /></span></>}
         </div>
         <div className="call-head-actions">
+          {roomInfo.timer && <TimerChip timer={roomInfo.timer} onFinish={() => cue("timer", 0.2)} />}
           {roomInfo.locked && <span className="lock-chip" title="ورود تازه‌واردها بسته است"><Icon name="lock" size={13} /> قفل</span>}
           {recording && <span className="rec-chip" title="در حال ضبط روی دستگاه تو"><i /> ضبط <Elapsed since={recording.since} /></span>}
           <ThemeControls colorTheme={colorTheme} onColorThemeChange={onColorThemeChange} dark={dark} setDark={setDark} compact/>
@@ -1417,6 +1610,17 @@ export function CallPage({
         <div className="rec-banner" role="status">
           <i /> {recorders.filter((participant) => participant.id !== user.id).map((participant) => participant.username).join("، ")} در حال ضبط این تماس {recorders.filter((participant) => participant.id !== user.id).length > 1 ? "هستند" : "است"}.
         </div>
+      )}
+
+      {poll && pollHidden !== poll.id && (
+        <PollCard
+          poll={poll}
+          isHost={isHost}
+          onVote={votePoll}
+          onClose={() => send({ type: "poll-close" })}
+          onDismiss={() => send({ type: "poll-dismiss" })}
+          onHide={() => setPollHidden(poll.id)}
+        />
       )}
 
       <div className="invite-bar glass" role="region" aria-label="لینک مستقیم ورود به تماس">
@@ -1468,6 +1672,7 @@ export function CallPage({
         {!participants.length && <div className="joining" role="status"><span className="spinner" /><p>در حال ورود به کال و آماده‌سازی میکروفون…</p></div>}
         {playbackBlocked && <button className="audio-unlock glass" onClick={enablePlayback}><Icon name="volume" size={17} /> فعال‌کردن صدای دریافتی</button>}
         {callNotice && <div className="call-notice glass" role="status" aria-live="polite"><Icon name="info" size={16} /><span>{callNotice}</span></div>}
+        {captionsOn && <CaptionsOverlay lines={captionLines} />}
       </section>
 
       <div className="call-toolbar-wrap">
@@ -1494,12 +1699,17 @@ export function CallPage({
               <button type="button" role="menuitem" className={recording ? "on rec" : ""} onClick={() => { setPopover(null); void toggleRecording(); }}><Icon name="record" size={18} /><span>{recording ? "توقف ضبط" : "ضبط تماس"}</span></button>
               <button type="button" role="menuitem" onClick={() => setPopover("quality")}><Icon name="signal" size={18} /><span>کیفیت صدا</span></button>
               <button type="button" role="menuitem" onClick={() => { setSettingsOpen(true); setPopover(null); }}><Icon name="settings" size={18} /><span>تنظیمات</span></button>
+              <button type="button" role="menuitem" className={captionsOn ? "on" : ""} onClick={() => { setPopover(null); toggleCaptions(); }}><Icon name="captions" size={18} /><span>{captionsOn ? "خاموش‌کردن زیرنویس" : "زیرنویس زنده"}</span></button>
+              {isHost && <button type="button" role="menuitem" onClick={() => { setPopover(null); setTimerSheet(true); }}><Icon name="clock" size={18} /><span>تایمر</span></button>}
+              {(isHost || poll) && <button type="button" role="menuitem" onClick={() => { setPopover(null); if (isHost) setPollSheet(true); else setPollHidden(""); }}><Icon name="poll" size={18} /><span>{isHost ? "نظرسنجی" : "نمایش نظرسنجی"}</span></button>}
+              <button type="button" role="menuitem" onClick={() => { setPopover(null); setInviteOpen(true); }}><Icon name="userPlus" size={18} /><span>دعوت دوستان</span></button>
+              <button type="button" role="menuitem" onClick={() => { setPopover(null); saveTranscript(); }}><Icon name="fileText" size={18} /><span>ذخیرهٔ گفتگو</span></button>
               <button type="button" role="menuitem" onClick={() => { setSettingsOpen(true); setPopover(null); }}><Icon name="keyboard" size={18} /><span>میانبرها</span></button>
             </div>
           )}
           <ToolButton label={micLabel} danger={!!me?.muted && microphoneReady} active={microphoneReady && !me?.muted} onClick={toggleMute} icon={microphoneReady && !me?.muted ? "mic" : "micOff"} />
           <ToolButton label={handUp ? "پایین آوردن دست" : "بالا بردن دست"} active={handUp} aria-pressed={handUp} onClick={toggleHand} icon="hand" badge={isHost && raisedCount ? raisedCount : undefined} />
-          <ToolButton label={sharing ? "توقف اشتراک" : "اشتراک صفحه"} active={sharing} disabled={someoneElseSharing && !sharing} onClick={toggleScreenShare} icon={sharing ? "screenOff" : "screen"} />
+          <ToolButton label={sharing ? "توقف اشتراک" : shareBlocked ? "فقط میزبان" : "اشتراک صفحه"} active={sharing} disabled={(someoneElseSharing || shareBlocked) && !sharing} onClick={toggleScreenShare} icon={sharing ? "screenOff" : "screen"} />
           <ToolButton label="گفت‌وگو" active={panel === "chat"} aria-expanded={panel === "chat"} onClick={() => { setPanel(panel === "chat" ? null : "chat"); setPopover(null); }} icon="message" badge={unread || undefined} />
           <ToolButton label="افراد" active={panel === "people"} aria-expanded={panel === "people"} onClick={() => { setPanel(panel === "people" ? null : "people"); setPopover(null); }} icon="users" badge={participants.length > 1 ? participants.length : undefined} quiet />
           <ToolButton label="بیشتر" active={popover === "more" || popover === "emoji" || popover === "quality" || boardOpen || !!recording} aria-expanded={popover === "more"} onClick={() => setPopover(popover ? null : "more")} icon="more" />
@@ -1563,6 +1773,9 @@ export function CallPage({
           onKick={kick}
           onTransfer={transferHost}
           onToggleLock={toggleLock}
+          shareMode={roomInfo.shareMode}
+          onToggleShareMode={toggleShareMode}
+          onInvite={() => setInviteOpen(true)}
           onClose={() => setPanel(null)}
         />
       )}
@@ -1598,6 +1811,10 @@ export function CallPage({
           onClose={() => setSettingsOpen(false)}
         />
       )}
+
+      {timerSheet && <TimerSheet active={!!roomInfo.timer} onStart={startTimer} onStop={stopTimer} onClose={() => setTimerSheet(false)} />}
+      {pollSheet && <PollSheet onCreate={createPoll} onClose={() => setPollSheet(false)} />}
+      {inviteOpen && <InviteSheet code={code} presentIds={participants.map((participant) => participant.id)} onNotify={notify} onClose={() => setInviteOpen(false)} />}
 
       {leaveDialog && (
         <div className="sheet-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setLeaveDialog(false); }}>

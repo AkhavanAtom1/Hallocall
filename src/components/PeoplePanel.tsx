@@ -40,6 +40,9 @@ type Props = {
   onKick: (id: string) => void;
   onTransfer: (id: string) => void;
   onToggleLock: () => void;
+  shareMode: "all" | "host";
+  onToggleShareMode: () => void;
+  onInvite: () => void;
   onClose: () => void;
 };
 
@@ -65,8 +68,14 @@ export function PeoplePanel(props: Props) {
         <button className="icon-btn" onClick={props.onClose} aria-label="بستن فهرست افراد"><Icon name="x" /></button>
       </div>
 
+      <div className="host-tools" role="group" aria-label="دعوت">
+        <button type="button" onClick={props.onInvite}><Icon name="userPlus" size={15} /> دعوت دوستان</button>
+      </div>
       {isHost && (
         <div className="host-tools" role="group" aria-label="ابزارهای میزبان">
+          <button type="button" aria-pressed={props.shareMode === "host"} className={props.shareMode === "host" ? "on" : ""} onClick={props.onToggleShareMode}>
+            <Icon name="screen" size={15} /> {props.shareMode === "host" ? "اشتراک صفحه: فقط میزبان" : "اشتراک صفحه: همه"}
+          </button>
           <button type="button" onClick={props.onMuteAll}><Icon name="micOff" size={15} /> بی‌صدا کردن همه</button>
           <button type="button" aria-pressed={locked} className={locked ? "on" : ""} onClick={props.onToggleLock}>
             <Icon name={locked ? "lock" : "unlock"} size={15} /> {locked ? "باز کردن ورود" : "قفل کردن تماس"}

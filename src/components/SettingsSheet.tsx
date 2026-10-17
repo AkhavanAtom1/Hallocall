@@ -1,3 +1,4 @@
+import { CAPTION_LANGUAGES, captionsSupported } from "../lib/captions";
 import { deviceLabel, supportsSinkId } from "../lib/devices";
 import type { DeviceLists } from "../lib/devices";
 import type { Prefs } from "../lib/prefs";
@@ -76,6 +77,19 @@ export function SettingsSheet({
           <label className="switch-row"><input type="checkbox" checked={prefs.echoCancellation} onChange={(event) => onProcessing({ echoCancellation: event.target.checked })} /><span>حذف اکو</span></label>
           <label className="switch-row"><input type="checkbox" checked={prefs.autoGain} onChange={(event) => onProcessing({ autoGain: event.target.checked })} /><span>تنظیم خودکار بلندی صدا</span></label>
           <label className="switch-row"><input type="checkbox" checked={prefs.pushToTalk} onChange={(event) => onPrefs({ pushToTalk: event.target.checked })} /><span>فشار برای صحبت (نگه‌داشتن Space؛ میکروفون در حالت عادی خاموش است)</span></label>
+
+          <h3>زیرنویس زنده</h3>
+          <label className="switch-row"><input type="checkbox" checked={prefs.captions} onChange={(event) => onPrefs({ captions: event.target.checked })} /><span>نمایش زیرنویس زنده و تبدیل گفتار من به متن برای دیگران</span></label>
+          <div className="lobby-field">
+            <label htmlFor="set-caption-lang">زبان گفتار من</label>
+            <select id="set-caption-lang" value={prefs.captionLang} onChange={(event) => onPrefs({ captionLang: event.target.value })}>
+              {CAPTION_LANGUAGES.map((language) => <option key={language.code} value={language.code}>{language.label}</option>)}
+            </select>
+          </div>
+          <p className="sheet-hint">{captionsSupported() ? "تشخیص گفتار را خود مرورگر انجام می‌دهد؛ در Chrome صدای تو برای تبدیل به متن به سرویس گوگل فرستاده می‌شود و فقط از میکروفون پیش‌فرض مرورگر استفاده می‌کند. هنگامی که میکروفونت خاموش است چیزی شنیده نمی‌شود." : "این مرورگر تبدیل گفتار به متن را پشتیبانی نمی‌کند؛ فقط زیرنویسِ دیگران را می‌بینی (برای گفتار خودت Chrome یا Edge را امتحان کن)."}</p>
+
+          <h3>اشتراک صفحه</h3>
+          <label className="switch-row"><input type="checkbox" checked={prefs.shareAudio} onChange={(event) => onPrefs({ shareAudio: event.target.checked })} /><span>پیشنهاد اشتراک صدای تب یا سیستم همراه با تصویر</span></label>
 
           <h3>صداهای اعلان</h3>
           <label className="switch-row"><input type="checkbox" checked={prefs.soundJoinLeave} onChange={(event) => onPrefs({ soundJoinLeave: event.target.checked })} /><span>صدای ورود و خروج افراد</span></label>
