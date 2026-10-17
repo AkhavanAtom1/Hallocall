@@ -61,6 +61,24 @@ Every `presence` message now also carries `room: { hostId, locked, board: { open
 
 `CallRoom.tsx` orchestrates; behaviour lives in `lib/` (`mesh`, `board`, `recorder`, `prefs`, `sounds`, `quality`, `devices`) and in small components (`Lobby`, `PeoplePanel`, `SettingsSheet`, `Whiteboard`). Joining as a listener (no microphone) uses a `recvonly` audio transceiver that is upgraded to `sendrecv` when a microphone becomes available, without reconnecting. Per-person volume uses `HTMLMediaElement.volume`/`muted`; the speaker choice uses `setSinkId` where available. Recording mixes the microphone and all remote streams through one `MediaStreamAudioDestinationNode` into a `MediaRecorder`.
 
+### Live user channel (v4)
+
+`UserHub` is a second Durable Object class, one instance per user (`idFromName(userId)`). The browser opens `/ws/user` (cookie-authenticated, same-origin check) and keeps it alive with the same `ping`/`pong` auto-response as call rooms. When something changes for a user, the Worker calls `notifyUser(env, userId, "incoming" | "friends")` after the database write; the hub forwards `{type:"event", event}` to every open tab (max 8). Nothing is stored and no data travels over the channel: pages simply re-run their normal API request (`useLiveRefresh` in `lib/userChannel.ts`). While the channel is connected the old 1.5 s polling is replaced by a 12 s safety net; if it drops, the fast polling returns automatically and the channel reconnects with back-off.
+
+Triggers: friend request / accept / remove, quick call invite, and the new in-call invite (`POST /api/calls/:code/invite`, stored as `call_invites.kind = 'join'`; declining such an invite never ends the running call).
+
+### Room extras (v4)
+
+- **Share mode**: `meta.shareMode` (`all` | `host`). Switching to `host` stops everybody else's screen share (`screen-stopped`) and refuses new ones (`denied`).
+- **Timer**: `meta.timer` stores an absolute end time server-side but is published as `remainingMs`; each client counts down on its own monotonic clock, so wrong device clocks do not matter.
+- **Poll**: one poll at a time in `meta.poll`; votes are keyed by user id, each recipient gets counts plus only their own `myVote`.
+- **Captions**: `caption` messages are relayed (never stored) and limited to 8 per second per speaker. Recognition runs in the speaker's browser (`SpeechRecognition`) and is paused while the microphone is muted.
+- **Screen sound**: the presenter announces the id of the screen `MediaStream` with a `screen-info` signal that always precedes the offer carrying it, so viewers can tell tab sound from the presenter's voice.
+
+### Rate limiting
+
+`rateLimit(env, key, limit, windowMs)` keeps fixed-window counters in the `rate_limits` D1 table with one `INSERT … ON CONFLICT … RETURNING`. Keys: login per account+network (12 / 10 min) and per network (80 / 10 min), register per network (12 / hour), search per user (90 / min), friend requests (40 / hour), call creation and invites. It fails open if the database errors.
+
 ## Durable Object choice
 
 Each call code maps to one Durable Object name. This makes a call's state strongly consistent and isolated from unrelated calls. The Durable Object enforces the shared 20-participant room limit before accepting a WebSocket.
