@@ -5,6 +5,7 @@ import "./premium.css";
 import "./refinement.css";
 import "./lite.css";
 import "./screenshare.css";
+import "./features.css";
 import "./theme.css";
 import { App } from "./App";
 

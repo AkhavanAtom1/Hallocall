@@ -48,6 +48,19 @@ Screen share is a second (video) track on the same peer connections, added with 
 
 Because calls are a peer-to-peer mesh, the presenter uploads one copy per viewer. `applyScreenQuality` therefore splits a ~2.4 Mbit/s budget across viewers (and lowers frame rate/resolution for larger audiences). For large audiences an SFU (for example Cloudflare Realtime) would be the next step.
 
+### Room state, host controls and the whiteboard (v3)
+
+Every `presence` message now also carries `room: { hostId, locked, board: { open, drawers } }`, so clients never need extra requests to know who the host is or whether the room is locked.
+
+- **Host**: the Worker passes `host_id` from D1 in the `x-host-id` header of each WebSocket upgrade; the Durable Object keeps it in `meta` and only that user may send `kick`, `lock`, `mute-request`, `hand-lower`, `board-open` and `board-clear` (others get `{type:"denied"}`). A host change (`POST /api/calls/:code/transfer` or leaving with `{transfer:true}`) updates D1 first and then tells the room through `POST /host`.
+- **Kick / lock**: kicked ids are stored in `meta.banned` and refused (403) on both the REST join and the socket; a locked room refuses (423) anyone who has never been a member, so people who dropped can still come back.
+- **Whiteboard**: strokes are flat integer arrays on a 1000×625 grid. Clients send fragments (≤ 400 numbers, ~20/s); the Durable Object validates colour/size/points, relays them to everybody else, trims the oldest strokes beyond 600 strokes / 60k numbers (announcing `board-remove`), and persists the board in ≤ 90 KB chunks (`board:0…n`). Late joiners receive one `board-sync`.
+- **Raise hand / recording flag**: per-socket attachment fields (`hand` = timestamp that also orders the queue, `rec`), published in `presence`.
+
+### Client structure (v3)
+
+`CallRoom.tsx` orchestrates; behaviour lives in `lib/` (`mesh`, `board`, `recorder`, `prefs`, `sounds`, `quality`, `devices`) and in small components (`Lobby`, `PeoplePanel`, `SettingsSheet`, `Whiteboard`). Joining as a listener (no microphone) uses a `recvonly` audio transceiver that is upgraded to `sendrecv` when a microphone becomes available, without reconnecting. Per-person volume uses `HTMLMediaElement.volume`/`muted`; the speaker choice uses `setSinkId` where available. Recording mixes the microphone and all remote streams through one `MediaStreamAudioDestinationNode` into a `MediaRecorder`.
+
 ## Durable Object choice
 
 Each call code maps to one Durable Object name. This makes a call's state strongly consistent and isolated from unrelated calls. The Durable Object enforces the shared 20-participant room limit before accepting a WebSocket.

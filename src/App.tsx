@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties, FormEvent, ReactNode } from "react";
 import { api } from "./lib/api";
 import { AVATAR_CATEGORIES, AVATARS, DEFAULT_AVATAR, avatarOf, faNum } from "./lib/avatars";
-import type { Friend, FriendRequest, IncomingCall, User } from "./lib/types";
+import type { Friend, FriendRequest, IncomingCall, RecentCall, User } from "./lib/types";
+import { playSound } from "./lib/sounds";
 import { Icon } from "./components/Icon";
 import { AvatarImage } from "./components/AvatarImage";
 import { AvatarPicker } from "./components/AvatarPicker";
@@ -469,6 +470,10 @@ function Calls({go,onToast,themeControls}:{go:(s:string)=>void;onToast:(s:string
   const [code,setCode]=useState("");
   const [busy,setBusy]=useState(false);
   const [artOk,setArtOk]=useState(true);
+  const [recent,setRecent]=useState<RecentCall[]>([]);
+  const [notifState,setNotifState]=useState<NotificationPermission|"unsupported">(()=>typeof Notification==="undefined"?"unsupported":Notification.permission);
+  useEffect(()=>{let active=true;api.recentCalls().then(d=>{if(active)setRecent(d.calls)}).catch(()=>{});return()=>{active=false}},[]);
+  const enableNotifications=async()=>{try{const result=await Notification.requestPermission();setNotifState(result);onToast(result==="granted"?"اعلان تماس ورودی فعال شد.":"اجازهٔ اعلان داده نشد.")}catch{onToast("این مرورگر اعلان را پشتیبانی نمی‌کند.")}};
   const create=async()=>{setBusy(true);try{const d=await api.createCall(name);onToast("کال ساخته شد؛ شما به‌عنوان میزبان وارد شدید.");go(`/call/${d.call.code}`)}catch(e){onToast(e instanceof Error?e.message:"خطا در ساخت کال")}finally{setBusy(false)}};
   const join=async(e:FormEvent)=>{
     e.preventDefault();
@@ -515,7 +520,26 @@ function Calls({go,onToast,themeControls}:{go:(s:string)=>void;onToast:(s:string
       </section>
       </div>
     </section>
+    {notifState==="default"&&<section className="notify-card glass" role="region" aria-label="اعلان تماس ورودی"><Icon name="info" size={18}/><span>برای اینکه وقتی این تب پشت پنجره‌های دیگر (مثلاً بازی) است هم تماس ورودی را ببینی، اعلان مرورگر را فعال کن. تب باید باز بماند.</span><button type="button" onClick={enableNotifications}>فعال‌سازی اعلان</button></section>}
+    {recent.length>0&&<section className="recent-calls glass" aria-labelledby="recent-title">
+      <div className="recent-head"><b id="recent-title">تماس‌های اخیر</b><small>اگر تماسی هنوز باز است، می‌توانی دوباره واردش شوی.</small></div>
+      <div className="recent-list">{recent.map(r=><div key={r.code} className="recent-item">
+        <div className="recent-info"><b>{r.name}</b><small>میزبان: {r.isHost?"شما":r.hostUsername} · {faNumber(r.members)} نفر · {relativeTime(r.lastJoinedAt)}</small></div>
+        {r.status==="active"?<GlowButton tone="cyan" size="sm" trailingIcon="arrow" onClick={()=>go(`/call/${r.code}`)}>ورود دوباره</GlowButton>:<span className="recent-ended">پایان یافته</span>}
+      </div>)}</div>
+    </section>}
   </div>;
+}
+
+function faNumber(value:number){return new Intl.NumberFormat("fa-IR").format(value)}
+function relativeTime(timestamp:number){
+  const seconds=Math.round((timestamp-Date.now())/1000);
+  const formatter=new Intl.RelativeTimeFormat("fa",{numeric:"auto"});
+  const abs=Math.abs(seconds);
+  if(abs<60)return formatter.format(0,"second");
+  if(abs<3600)return formatter.format(Math.round(seconds/60),"minute");
+  if(abs<86400)return formatter.format(Math.round(seconds/3600),"hour");
+  return formatter.format(Math.round(seconds/86400),"day");
 }
 
 function IncomingOverlay({call,busy,onAccept,onDecline}:{call:IncomingCall;busy:boolean;onAccept:()=>void;onDecline:()=>void}){
@@ -523,6 +547,23 @@ function IncomingOverlay({call,busy,onAccept,onDecline}:{call:IncomingCall;busy:
   const dialogRef=useRef<HTMLDivElement>(null);
   const declineRef=useRef(onDecline);
   declineRef.current=onDecline;
+  /* Ring, flash the tab title and (when the tab is hidden) show a system notification. */
+  useEffect(()=>{
+    const name=call.caller.username;
+    playSound("ring",0.22);
+    const ring=window.setInterval(()=>playSound("ring",0.22),2600);
+    const original=document.title;
+    let flip=false;
+    const flash=window.setInterval(()=>{flip=!flip;document.title=flip?`📞 تماس از ${name}`:original},1000);
+    let notification:Notification|null=null;
+    try{
+      if(typeof Notification!=="undefined"&&Notification.permission==="granted"&&document.visibilityState==="hidden"){
+        notification=new Notification(`تماس ورودی از ${name}`,{body:call.name,tag:"hallocall-incoming",icon:"/avatars/hallocall.webp"});
+        notification.onclick=()=>{window.focus();notification?.close()};
+      }
+    }catch{}
+    return()=>{window.clearInterval(ring);window.clearInterval(flash);document.title=original;notification?.close()};
+  },[call.inviteId]);
   useEffect(()=>{
     const previous=document.activeElement as HTMLElement|null;
     dialogRef.current?.focus();

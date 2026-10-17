@@ -1,4 +1,6 @@
 import { applyAudioQuality, applyScreenQuality } from "./webrtc";
+import { qualityLevel } from "./quality";
+import type { PeerQuality } from "./quality";
 
 /**
  * CallMesh — all WebRTC peer handling for one call.
@@ -39,6 +41,8 @@ export type MeshOptions = {
   onRemoteAudio: (id: string, stream: MediaStream) => void;
   onRemoteScreen: (id: string, stream: MediaStream | null) => void;
   onPeerClosed: (id: string) => void;
+  /** Connection quality of one peer (bars in the people list). Optional. */
+  onPeerQuality?: (id: string, quality: PeerQuality) => void;
   /** Repeated, unrecoverable failures: the host component should do a full re-join. */
   onFatal?: () => void;
   /** Test seam. */
@@ -56,6 +60,8 @@ type Entry = {
   forceIceRestart: boolean;
   pending: RTCIceCandidateInit[];
   audioSender: RTCRtpSender | null;
+  /** Set when we joined without a microphone (receive-only) so it can be upgraded later. */
+  audioTransceiver: RTCRtpTransceiver | null;
   screenSender: RTCRtpSender | null;
   chain: Promise<void>;
   closed: boolean;
@@ -68,6 +74,10 @@ type Entry = {
   unhealthySince: number;
   disconnectTimer: ReturnType<typeof setTimeout> | null;
   watchdog: ReturnType<typeof setInterval> | null;
+  statsTimer: ReturnType<typeof setInterval> | null;
+  prevLost: number;
+  prevReceived: number;
+  lastQualitySig: string;
   negotiate: () => Promise<void>;
 };
 
@@ -81,6 +91,7 @@ const FIRST_CONNECT_LIMIT_MS = 9_000;
 const REPEAT_RECOVER_LIMIT_MS = 12_000;
 const MAX_RESTARTS_BEFORE_FATAL = 6;
 const POLITE_INITIAL_DELAY_MS = 350;
+const STATS_INTERVAL_MS = 3_000;
 
 export class CallMesh {
   sid: string;
@@ -115,6 +126,11 @@ export class CallMesh {
     await Promise.all(Array.from(this.peers.values()).map(async (entry) => {
       if (!entry.audioSender) return;
       try { await entry.audioSender.replaceTrack(track); } catch { /* peer will recover via restart */ }
+      /* Joined listen-only and a microphone just became available: start sending. */
+      const transceiver = entry.audioTransceiver;
+      if (transceiver && transceiver.direction === "recvonly") {
+        try { transceiver.direction = "sendrecv"; } catch { /* negotiation retries */ }
+      }
     }));
   }
 
@@ -240,6 +256,7 @@ export class CallMesh {
       forceIceRestart: false,
       pending: [],
       audioSender: null,
+      audioTransceiver: null,
       screenSender: null,
       chain: Promise.resolve(),
       closed: false,
@@ -250,6 +267,10 @@ export class CallMesh {
       unhealthySince: Date.now(),
       disconnectTimer: null,
       watchdog: null,
+      statsTimer: null,
+      prevLost: 0,
+      prevReceived: 0,
+      lastQualitySig: "",
       negotiate: async () => {},
     };
 
@@ -271,8 +292,16 @@ export class CallMesh {
       }
     };
 
-    for (const track of this.localStream?.getAudioTracks() ?? []) {
+    const audioTracks = this.localStream?.getAudioTracks() ?? [];
+    for (const track of audioTracks) {
       try { entry.audioSender = pc.addTrack(track, this.localStream as MediaStream); } catch { /* ignore */ }
+    }
+    if (!audioTracks.length) {
+      /* No microphone (denied / listen-only): still receive everyone's audio. */
+      try {
+        entry.audioTransceiver = pc.addTransceiver("audio", { direction: "recvonly" });
+        entry.audioSender = entry.audioTransceiver.sender;
+      } catch { /* very old browsers: they cannot join listen-only */ }
     }
     this.attachScreen(entry);
 
@@ -308,6 +337,7 @@ export class CallMesh {
     };
 
     entry.watchdog = setInterval(() => this.watch(entry), WATCHDOG_INTERVAL_MS);
+    if (this.opts.onPeerQuality) entry.statsTimer = setInterval(() => { void this.pollStats(entry); }, STATS_INTERVAL_MS);
     this.opts.onPeerState(id, false);
     return entry;
   }
@@ -320,6 +350,7 @@ export class CallMesh {
     this.peers.delete(id);
     if (entry.disconnectTimer) clearTimeout(entry.disconnectTimer);
     if (entry.watchdog) clearInterval(entry.watchdog);
+    if (entry.statsTimer) clearInterval(entry.statsTimer);
     const pc = entry.pc;
     pc.onnegotiationneeded = null;
     pc.onicecandidate = null;
@@ -476,6 +507,51 @@ export class CallMesh {
       entry.forceIceRestart = true;
       void entry.negotiate();
     }
+  }
+
+  /* ───────────────────────── connection quality ───────────────────────── */
+
+  private async pollStats(entry: Entry) {
+    if (entry.closed || !this.opts.onPeerQuality) return;
+    const connected = this.isHealthy(entry);
+    const measured = { rtt: null as number | null, jitter: null as number | null, loss: null as number | null };
+    try {
+      const report = await entry.pc.getStats();
+      let lost = 0;
+      let received = 0;
+      let inbound = false;
+      report.forEach((stat: Record<string, unknown>) => {
+        if (stat.type === "candidate-pair" && (stat.nominated || stat.selected) && stat.state === "succeeded" && typeof stat.currentRoundTripTime === "number") {
+          measured.rtt = stat.currentRoundTripTime * 1000;
+        }
+        if (stat.type === "inbound-rtp" && stat.kind === "audio") {
+          inbound = true;
+          lost += typeof stat.packetsLost === "number" ? stat.packetsLost : 0;
+          received += typeof stat.packetsReceived === "number" ? stat.packetsReceived : 0;
+          if (typeof stat.jitter === "number") measured.jitter = Math.max(measured.jitter ?? 0, stat.jitter * 1000);
+        }
+      });
+      if (inbound) {
+        const lostDelta = lost - entry.prevLost;
+        const receivedDelta = received - entry.prevReceived;
+        entry.prevLost = lost;
+        entry.prevReceived = received;
+        if (lostDelta + receivedDelta > 20) measured.loss = (Math.max(0, lostDelta) / (lostDelta + receivedDelta)) * 100;
+      }
+    } catch {
+      /* stats are best-effort */
+    }
+    if (entry.closed) return;
+    const level = qualityLevel({ connected, rttMs: measured.rtt, lossPct: measured.loss, jitterMs: measured.jitter });
+    const signature = `${level}:${measured.rtt === null ? "-" : Math.round(measured.rtt / 40)}`;
+    if (signature === entry.lastQualitySig) return;
+    entry.lastQualitySig = signature;
+    this.opts.onPeerQuality(entry.id, {
+      level,
+      rttMs: measured.rtt === null ? null : Math.round(measured.rtt),
+      lossPct: measured.loss === null ? null : Math.round(measured.loss * 10) / 10,
+      jitterMs: measured.jitter === null ? null : Math.round(measured.jitter),
+    });
   }
 
   /* ───────────────────────── screen share ───────────────────────── */

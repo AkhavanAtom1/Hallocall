@@ -235,6 +235,10 @@ type RoomPeer = {
   muted: boolean;
   /** True while this person is sharing their screen (one sharer per room). */
   sharing?: boolean;
+  /** Time the hand was raised (0 = hand down); also gives the speaking queue its order. */
+  hand?: number;
+  /** True while this person records the call locally (everyone is told). */
+  rec?: boolean;
   /** Page-session id chosen by the browser; peers bind WebRTC connections to it. */
   sid?: string;
   joinedAt?: number;
@@ -243,14 +247,43 @@ type RoomPeer = {
   superseded?: boolean;
 };
 
+/** Room-level state that must survive hibernation (stored under "meta"). */
+type RoomMeta = {
+  hostId: string;
+  locked: boolean;
+  /** People the host removed; they cannot come back into this call. */
+  banned: string[];
+  /** Everyone who has been in the room (they may re-enter a locked room after a drop). */
+  members: string[];
+  boardOpen: boolean;
+  boardDrawers: "all" | "host";
+};
+
+type BoardStroke = { id: string; uid: string; tool: "pen" | "highlight" | "eraser"; color: string; size: number; pts: number[] };
+
 /** Clients ping every 15 s; a pinging client silent for this long is dead. */
 const STALE_AFTER_MS = 75_000;
 const SWEEP_EVERY_MS = 30_000;
 const ACTIVITY_WRITE_INTERVAL_MS = 10_000;
+const BOARD_MAX_STROKES = 600;
+const BOARD_MAX_NUMBERS = 60_000;
+const STROKE_MAX_NUMBERS = 2_400;
+const BOARD_FRAGMENT_MAX_NUMBERS = 400;
+const BOARD_CHUNK_CHARS = 90_000;
+const BOARD_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
+const MEMBERS_MAX = 200;
+
+function defaultMeta(): RoomMeta {
+  return { hostId: "", locked: false, banned: [], members: [], boardOpen: false, boardDrawers: "all" };
+}
 
 export class CallRoom {
   private state: DurableObjectState;
   private messages: Array<{ id:string; userId:string; username:string; avatar:string; text:string; createdAt:number }> = [];
+  private meta: RoomMeta = defaultMeta();
+  private board: BoardStroke[] = [];
+  private boardIndex = new Map<string, BoardStroke>();
+  private boardChunks = 0;
   private loaded = false;
   private loading: Promise<void> | null = null;
 
@@ -267,9 +300,71 @@ export class CallRoom {
     this.loading ??= (async () => {
       const saved = await this.state.storage.get<typeof this.messages>("messages");
       if (saved) this.messages = saved.slice(-100);
+      const meta = await this.state.storage.get<Partial<RoomMeta>>("meta");
+      if (meta && typeof meta === "object") {
+        this.meta = {
+          ...defaultMeta(),
+          ...meta,
+          banned: Array.isArray(meta.banned) ? meta.banned.slice(0, MEMBERS_MAX) : [],
+          members: Array.isArray(meta.members) ? meta.members.slice(0, MEMBERS_MAX) : [],
+        };
+      }
+      const count = await this.state.storage.get<number>("board:n");
+      if (typeof count === "number" && count > 0 && count < 64) {
+        const keys = Array.from({ length: count }, (_, index) => `board:${index}`);
+        const chunks = await this.state.storage.get<BoardStroke[]>(keys);
+        const strokes: BoardStroke[] = [];
+        for (const key of keys) {
+          const chunk = chunks.get(key);
+          if (Array.isArray(chunk)) strokes.push(...chunk);
+        }
+        this.board = strokes;
+        this.boardChunks = count;
+        this.rebuildBoardIndex();
+      }
       this.loaded = true;
     })();
     await this.loading;
+  }
+
+  private async saveMeta() {
+    await this.state.storage.put("meta", this.meta);
+  }
+
+  private rebuildBoardIndex() {
+    this.boardIndex = new Map(this.board.map((stroke) => [stroke.id, stroke]));
+  }
+
+  private boardNumbers() {
+    let total = 0;
+    for (const stroke of this.board) total += stroke.pts.length;
+    return total;
+  }
+
+  /** The board is stored in a few ≤ ~90 KB chunks so no single value gets too large. */
+  private async persistBoard() {
+    const chunks: BoardStroke[][] = [];
+    let current: BoardStroke[] = [];
+    let size = 0;
+    for (const stroke of this.board) {
+      const length = stroke.pts.length * 5 + 90;
+      if (size + length > BOARD_CHUNK_CHARS && current.length) {
+        chunks.push(current);
+        current = [];
+        size = 0;
+      }
+      current.push(stroke);
+      size += length;
+    }
+    if (current.length) chunks.push(current);
+    const entries: Record<string, unknown> = { "board:n": chunks.length };
+    chunks.forEach((chunk, index) => { entries[`board:${index}`] = chunk; });
+    await this.state.storage.put(entries);
+    if (this.boardChunks > chunks.length) {
+      const stale = Array.from({ length: this.boardChunks - chunks.length }, (_, index) => `board:${chunks.length + index}`);
+      await this.state.storage.delete(stale);
+    }
+    this.boardChunks = chunks.length;
   }
 
   private peerOf(socket: WebSocket): RoomPeer | null {
@@ -307,8 +402,23 @@ export class CallRoom {
       avatar:peer.avatar,
       muted:!!peer.muted,
       sharing:!!peer.sharing,
+      hand:peer.hand ?? 0,
+      rec:!!peer.rec,
       sid:peer.sid ?? "",
+      joinedAt:peer.joinedAt ?? 0,
     }));
+  }
+
+  private roomInfo() {
+    return {
+      hostId: this.meta.hostId,
+      locked: this.meta.locked,
+      board: { open: this.meta.boardOpen, drawers: this.meta.boardDrawers },
+    };
+  }
+
+  private presence(except?: WebSocket) {
+    return { type:"presence", participants:this.snapshot(except), room:this.roomInfo() };
   }
 
   private broadcast(payload: unknown, except?: WebSocket) {
@@ -319,6 +429,10 @@ export class CallRoom {
         socket.send(text);
       } catch {}
     }
+  }
+
+  private isHost(peer: RoomPeer) {
+    return !!this.meta.hostId && peer.id === this.meta.hostId;
   }
 
   private async scheduleSweep() {
@@ -337,6 +451,23 @@ export class CallRoom {
       const username = request.headers.get("x-username");
       const avatar = request.headers.get("x-avatar") || "ronaldo_red";
       if (!id || !username) return new Response("Unauthorized", { status:401 });
+
+      /* The Worker passes the host from the database on every connect, so the
+         room always agrees with D1 even after a host change. */
+      const hostHeader = request.headers.get("x-host-id") ?? "";
+      let metaChanged = false;
+      if (hostHeader && hostHeader !== this.meta.hostId) { this.meta.hostId = hostHeader; metaChanged = true; }
+
+      if (this.meta.banned.includes(id) && id !== this.meta.hostId) {
+        if (metaChanged) await this.saveMeta();
+        return new Response("میزبان شما را از این تماس حذف کرده است.", { status:403 });
+      }
+      const isMember = this.meta.members.includes(id) || id === this.meta.hostId;
+      if (this.meta.locked && !isMember) {
+        if (metaChanged) await this.saveMeta();
+        return new Response("میزبان این تماس را قفل کرده است.", { status:423 });
+      }
+
       /* Empty for older cached clients that predate heartbeat/session ids; those
          are never evicted by the stale sweep because they do not ping. */
       const sid = (url.searchParams.get("sid") ?? "").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 64);
@@ -359,31 +490,61 @@ export class CallRoom {
 
       const occupied = this.connectedSockets().length;
       if (occupied >= MAX_CALL_PARTICIPANTS) {
+        if (metaChanged) await this.saveMeta();
         return new Response(`این کال به حداکثر ظرفیت ${MAX_CALL_PARTICIPANTS} نفر رسیده است.`, { status:409 });
       }
+
+      if (!this.meta.members.includes(id)) {
+        this.meta.members.push(id);
+        if (this.meta.members.length > MEMBERS_MAX) this.meta.members = this.meta.members.slice(-MEMBERS_MAX);
+        metaChanged = true;
+      }
+      if (metaChanged) await this.saveMeta();
 
       const pair = new WebSocketPair();
       const client = pair[0];
       const server = pair[1];
       this.state.acceptWebSocket(server);
 
-      const session: RoomPeer = { id, username, avatar, muted:false, sharing:false, sid, joinedAt, lastActive:joinedAt };
+      const session: RoomPeer = { id, username, avatar, muted:false, sharing:false, hand:0, rec:false, sid, joinedAt, lastActive:joinedAt };
       server.serializeAttachment(session);
 
       server.send(JSON.stringify({
         type:"ready",
         selfId:id,
         participants:this.snapshot(),
+        room:this.roomInfo(),
         messages:this.messages,
       }));
-      this.broadcast({ type:"presence", participants:this.snapshot() }, server);
+      if (this.board.length) server.send(JSON.stringify({ type:"board-sync", strokes:this.board }));
+      this.broadcast(this.presence(), server);
       await this.scheduleSweep();
 
       return new Response(null, { status:101, webSocket:client } as any);
     }
 
     if (url.pathname.endsWith("/state")) {
-      return json({ participants:this.snapshot(), messages:this.messages });
+      return json({
+        participants:this.snapshot(),
+        messages:this.messages,
+        hostId:this.meta.hostId,
+        locked:this.meta.locked,
+        members:this.meta.members,
+        banned:this.meta.banned,
+      });
+    }
+
+    if (url.pathname.endsWith("/host") && request.method === "POST") {
+      const body = await request.json().catch(() => null) as { hostId?: unknown } | null;
+      const hostId = typeof body?.hostId === "string" ? body.hostId : "";
+      if (!hostId) return json({ error:"hostId required" }, { status:400 });
+      this.meta.hostId = hostId;
+      /* A new host can always come back into a locked room. */
+      if (!this.meta.members.includes(hostId)) this.meta.members.push(hostId);
+      this.meta.banned = this.meta.banned.filter((banned) => banned !== hostId);
+      await this.saveMeta();
+      this.broadcast(this.presence());
+      return json({ ok:true });
     }
 
     if (url.pathname.endsWith("/end")) {
@@ -416,6 +577,18 @@ export class CallRoom {
         emoji?:string;
         muted?:boolean;
         active?:boolean;
+        up?:boolean;
+        on?:boolean;
+        all?:boolean;
+        locked?:boolean;
+        open?:boolean;
+        drawers?:string;
+        id?:string;
+        tool?:string;
+        color?:string;
+        size?:number;
+        pts?:unknown;
+        end?:boolean;
       };
 
       const current = now();
@@ -438,7 +611,25 @@ export class CallRoom {
       if (msg.type === "mute") {
         session.muted = !!msg.muted;
         ws.serializeAttachment(session);
-        this.broadcast({ type:"presence", participants:this.snapshot() });
+        this.broadcast(this.presence());
+        return;
+      }
+
+      if (msg.type === "hand") {
+        const up = !!msg.up;
+        if (!!session.hand === up) return;
+        session.hand = up ? current : 0;
+        ws.serializeAttachment(session);
+        this.broadcast(this.presence());
+        return;
+      }
+
+      if (msg.type === "rec") {
+        const on = !!msg.on;
+        if (!!session.rec === on) return;
+        session.rec = on;
+        ws.serializeAttachment(session);
+        this.broadcast(this.presence());
         return;
       }
 
@@ -455,7 +646,135 @@ export class CallRoom {
         if (!!session.sharing === wantsToShare) return;
         session.sharing = wantsToShare;
         ws.serializeAttachment(session);
-        this.broadcast({ type:"presence", participants:this.snapshot() });
+        this.broadcast(this.presence());
+        return;
+      }
+
+      /* ── host-only controls ── */
+      if (msg.type === "hand-lower" || msg.type === "mute-request" || msg.type === "kick" || msg.type === "lock" || msg.type === "board-open" || msg.type === "board-clear") {
+        if (!this.isHost(session)) {
+          try { ws.send(JSON.stringify({ type:"denied", action:msg.type })); } catch {}
+          return;
+        }
+
+        if (msg.type === "hand-lower" && typeof msg.to === "string") {
+          for (const [socket, peer] of this.connectedSockets()) {
+            if (peer.id === msg.to && peer.hand) {
+              peer.hand = 0;
+              try { socket.serializeAttachment(peer); } catch {}
+              try { socket.send(JSON.stringify({ type:"hand-lowered", by:session.username })); } catch {}
+            }
+          }
+          this.broadcast(this.presence());
+          return;
+        }
+
+        if (msg.type === "mute-request") {
+          for (const [socket, peer] of this.connectedSockets()) {
+            if (peer.id === session.id) continue;
+            if (!msg.all && peer.id !== msg.to) continue;
+            try { socket.send(JSON.stringify({ type:"mute-request", by:session.username })); } catch {}
+          }
+          return;
+        }
+
+        if (msg.type === "kick" && typeof msg.to === "string" && msg.to !== session.id) {
+          const target = msg.to;
+          if (!this.meta.banned.includes(target)) {
+            this.meta.banned.push(target);
+            if (this.meta.banned.length > MEMBERS_MAX) this.meta.banned = this.meta.banned.slice(-MEMBERS_MAX);
+            await this.saveMeta();
+          }
+          for (const socket of this.state.getWebSockets()) {
+            const peer = this.peerOf(socket);
+            if (!peer || peer.id !== target || peer.superseded) continue;
+            peer.superseded = true;
+            try { socket.serializeAttachment(peer); } catch {}
+            try { socket.send(JSON.stringify({ type:"kicked", by:session.username })); } catch {}
+            try { socket.close(4003, "Removed by host"); } catch {}
+          }
+          this.broadcast(this.presence());
+          return;
+        }
+
+        if (msg.type === "lock") {
+          this.meta.locked = !!msg.locked;
+          await this.saveMeta();
+          this.broadcast(this.presence());
+          return;
+        }
+
+        if (msg.type === "board-open") {
+          this.meta.boardOpen = !!msg.open;
+          if (msg.drawers === "all" || msg.drawers === "host") this.meta.boardDrawers = msg.drawers;
+          await this.saveMeta();
+          this.broadcast(this.presence());
+          return;
+        }
+
+        if (msg.type === "board-clear") {
+          this.board = [];
+          this.boardIndex.clear();
+          await this.persistBoard();
+          this.broadcast({ type:"board-clear" });
+          return;
+        }
+        return;
+      }
+
+      /* ── whiteboard ── */
+      if (msg.type === "board-stroke") {
+        if (this.meta.boardDrawers === "host" && !this.isHost(session)) return;
+        const strokeId = typeof msg.id === "string" && msg.id.length > 0 && msg.id.length <= 40 ? msg.id : "";
+        if (!strokeId) return;
+        const tool = msg.tool === "highlight" || msg.tool === "eraser" ? msg.tool : "pen";
+        const color = typeof msg.color === "string" && BOARD_COLOR_RE.test(msg.color) ? msg.color : "#111827";
+        const size = Math.min(60, Math.max(1, Math.round(Number(msg.size) || 4)));
+        let incoming = Array.isArray(msg.pts)
+          ? (msg.pts as unknown[]).filter((value): value is number => typeof value === "number" && Number.isFinite(value))
+              .slice(0, BOARD_FRAGMENT_MAX_NUMBERS)
+              .map((value) => Math.max(0, Math.min(1000, Math.round(value))))
+          : [];
+        if (incoming.length % 2) incoming = incoming.slice(0, incoming.length - 1);
+
+        let stroke = this.boardIndex.get(strokeId);
+        if (stroke && stroke.uid !== session.id) return;
+        if (!stroke) {
+          if (!incoming.length) return;
+          stroke = { id:strokeId, uid:session.id, tool, color, size, pts:[] };
+          this.board.push(stroke);
+          this.boardIndex.set(strokeId, stroke);
+        }
+        const room = Math.max(0, STROKE_MAX_NUMBERS - stroke.pts.length);
+        const accepted = incoming.slice(0, room - (room % 2));
+        if (accepted.length) stroke.pts.push(...accepted);
+
+        /* Keep the board bounded: drop the oldest strokes first. */
+        const removed: string[] = [];
+        let total = this.boardNumbers();
+        while (this.board.length > BOARD_MAX_STROKES || total > BOARD_MAX_NUMBERS) {
+          const oldest = this.board.shift();
+          if (!oldest) break;
+          total -= oldest.pts.length;
+          this.boardIndex.delete(oldest.id);
+          removed.push(oldest.id);
+        }
+        for (const removedId of removed) this.broadcast({ type:"board-remove", id:removedId });
+
+        this.broadcast({ type:"board-stroke", uid:session.id, id:strokeId, tool:stroke.tool, color:stroke.color, size:stroke.size, pts:accepted, end:!!msg.end }, ws);
+        if (msg.end || removed.length) await this.persistBoard();
+        return;
+      }
+
+      if (msg.type === "board-undo") {
+        for (let i = this.board.length - 1; i >= 0; i--) {
+          if (this.board[i].uid !== session.id) continue;
+          const [removedStroke] = this.board.splice(i, 1);
+          this.boardIndex.delete(removedStroke.id);
+          this.broadcast({ type:"board-remove", id:removedStroke.id });
+          await this.persistBoard();
+          break;
+        }
         return;
       }
 
@@ -501,12 +820,12 @@ export class CallRoom {
     try { ws.close(safeCode, (reason ?? "").slice(0, 100)); } catch {}
     /* A replaced socket was already removed from the list when its successor
        connected; announcing again would only cause a redundant refresh. */
-    if (peer && !peer.superseded) this.broadcast({ type:"presence", participants:this.snapshot(ws) }, ws);
+    if (peer && !peer.superseded) this.broadcast(this.presence(ws), ws);
   }
 
   async webSocketError(ws: WebSocket) {
     const peer = this.peerOf(ws);
-    if (peer && !peer.superseded) this.broadcast({ type:"presence", participants:this.snapshot(ws) }, ws);
+    if (peer && !peer.superseded) this.broadcast(this.presence(ws), ws);
   }
 
   /** Periodic sweep: evicts "ghost" participants whose connection died without
@@ -536,19 +855,21 @@ export class CallRoom {
       }
     }
 
-    if (evicted) this.broadcast({ type:"presence", participants:this.snapshot() });
+    if (evicted) this.broadcast(this.presence());
     if (this.state.getWebSockets().length) {
       try { await this.state.storage.setAlarm(current + SWEEP_EVERY_MS); } catch {}
     }
   }
 }
 
-async function callDO(env: Env, code:string, req:Request, user:SafeUser): Promise<Response> {
+async function callDO(env: Env, code:string, req:Request, user:SafeUser, hostId = ""): Promise<Response> {
   const id = env.CALL_ROOMS.idFromName(code);
   const headers = new Headers(req.headers);
   headers.set("x-user-id", user.id);
   headers.set("x-username", user.username);
   headers.set("x-avatar", user.avatar);
+  if (hostId) headers.set("x-host-id", hostId);
+  else headers.delete("x-host-id");
   const response = await env.CALL_ROOMS.get(id).fetch(new Request(req, { headers }));
   return response ?? new Response("Call room unavailable", { status:503 });
 }
@@ -606,6 +927,14 @@ async function runEnsureAuthDatabase(env: Env) {
     )`),
     env.HALLOCALL_DB.prepare(`CREATE INDEX IF NOT EXISTS call_invites_callee_idx ON call_invites(callee_id, status, created_at)`),
     env.HALLOCALL_DB.prepare(`CREATE INDEX IF NOT EXISTS call_invites_caller_idx ON call_invites(caller_id, status, created_at)`),
+    env.HALLOCALL_DB.prepare(`CREATE TABLE IF NOT EXISTS call_members (
+      call_id TEXT NOT NULL REFERENCES calls(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      first_joined_at INTEGER NOT NULL,
+      last_joined_at INTEGER NOT NULL,
+      PRIMARY KEY (call_id, user_id)
+    )`),
+    env.HALLOCALL_DB.prepare(`CREATE INDEX IF NOT EXISTS call_members_user_idx ON call_members(user_id, last_joined_at)`),
   ]);
 }
 
@@ -809,7 +1138,22 @@ async function api(env: Env, req: Request): Promise<Response> {
       .bind(auth.user.id,cutoff).all<{invite_id:string;code:string;name:string;caller_id:string;caller_username:string;caller_avatar:string}>();
     return json({ calls:rows.results.map(r=>({inviteId:r.invite_id,code:r.code,name:r.name,caller:{id:r.caller_id,username:r.caller_username,avatar:r.caller_avatar}})) });
   }
-  const RESERVED_CALL_ROUTES = new Set(["invite", "respond", "join", "leave", "incoming"]);
+  /* Calls this account has been in recently, newest first (for "join again"). */
+  if (path === "/api/calls/recent" && method === "GET") {
+    const auth = await requireUser(env,req); if ("response" in auth) return auth.response;
+    await ensureAuthDatabase(env);
+    const rows = await env.HALLOCALL_DB.prepare(`SELECT c.code,c.name,c.status,c.ended_at,c.host_id,h.username host_username,m.last_joined_at,
+        (SELECT COUNT(*) FROM call_members x WHERE x.call_id=c.id) members
+      FROM call_members m JOIN calls c ON c.id=m.call_id JOIN users h ON h.id=c.host_id
+      WHERE m.user_id=?1 ORDER BY m.last_joined_at DESC LIMIT 12`)
+      .bind(auth.user.id).all<{code:string;name:string;status:string;ended_at:number|null;host_id:string;host_username:string;last_joined_at:number;members:number}>();
+    return json({ calls:rows.results.map((r)=>({
+      code:r.code, name:r.name, status:r.status==="ended"?"ended":"active",
+      isHost:r.host_id===auth.user.id, hostUsername:r.host_username,
+      lastJoinedAt:r.last_joined_at, endedAt:r.ended_at, members:r.members,
+    })) });
+  }
+  const RESERVED_CALL_ROUTES = new Set(["invite", "respond", "join", "leave", "incoming", "recent"]);
   const callMatch = path.match(/^\/api\/calls\/([^/]+)$/);
   if (callMatch && method === "GET" && !RESERVED_CALL_ROUTES.has(callMatch[1])) {
     const auth = await requireUser(env,req); if ("response" in auth) return auth.response;
@@ -873,22 +1217,80 @@ async function api(env: Env, req: Request): Promise<Response> {
     try {
       const stateRes = await env.CALL_ROOMS.get(roomId).fetch(new Request("https://call-room.local/state", { headers:roomHeaders }));
       if (stateRes.ok) {
-        const state = await stateRes.json() as { participants?:Array<{id:string}> };
+        const state = await stateRes.json() as { participants?:Array<{id:string}>; locked?:boolean; members?:string[]; banned?:string[] };
         const participants = state.participants ?? [];
+        const isHost = row.host_id === auth.user.id;
+        if (!isHost && (state.banned ?? []).includes(auth.user.id)) {
+          return json({ error:"میزبان شما را از این تماس حذف کرده است." }, { status:403 });
+        }
+        if (!isHost && state.locked && !(state.members ?? []).includes(auth.user.id) && !participants.some(p=>p.id===auth.user.id)) {
+          return json({ error:"میزبان این تماس را قفل کرده است و ورود تازه‌واردها بسته است." }, { status:423 });
+        }
         if (participants.length >= MAX_CALL_PARTICIPANTS && !participants.some(p=>p.id===auth.user.id)) {
           return json({ error:`این کال در حال حاضر پر است. حداکثر ظرفیت این تماس ${MAX_CALL_PARTICIPANTS} نفر است.` }, { status:409 });
         }
       }
     } catch {}
     if (row.status === "waiting") await env.HALLOCALL_DB.prepare(`UPDATE calls SET status='active' WHERE id=?1 AND status='waiting'`).bind(row.id).run();
+    /* "Recent calls" history; must never block a join. */
+    try {
+      await ensureAuthDatabase(env);
+      const at = now();
+      await env.HALLOCALL_DB.prepare(`INSERT INTO call_members(call_id,user_id,first_joined_at,last_joined_at) VALUES(?1,?2,?3,?3)
+        ON CONFLICT(call_id,user_id) DO UPDATE SET last_joined_at=excluded.last_joined_at`).bind(row.id,auth.user.id,at).run();
+    } catch {}
     return json({ ok:true, call:callJson({...row,status:"active"}) });
   }
+  /* Pick the person who has been in the room longest (other than `excludeId`). */
+  const pickSuccessor = async (code: string, excludeId: string) => {
+    try {
+      const res = await env.CALL_ROOMS.get(env.CALL_ROOMS.idFromName(code)).fetch(new Request("https://call-room.local/state"));
+      if (!res.ok) return null;
+      const state = await res.json() as { participants?:Array<{id:string;joinedAt?:number}> };
+      const others = (state.participants ?? []).filter((p) => p.id !== excludeId).sort((a,b) => (a.joinedAt ?? 0) - (b.joinedAt ?? 0));
+      return others[0]?.id ?? null;
+    } catch { return null; }
+  };
+  const setHost = async (row: {id:string}, code: string, hostId: string) => {
+    await env.HALLOCALL_DB.prepare(`UPDATE calls SET host_id=?1 WHERE id=?2 AND status<>'ended'`).bind(hostId,row.id).run();
+    await env.CALL_ROOMS.get(env.CALL_ROOMS.idFromName(code)).fetch(new Request("https://call-room.local/host", { method:"POST", headers:{ "content-type":"application/json" }, body:JSON.stringify({ hostId }) }));
+  };
+
+  const transferMatch = path.match(/^\/api\/calls\/([^/]+)\/transfer$/);
+  if (transferMatch && method === "POST") {
+    const auth = await requireUser(env,req); if ("response" in auth) return auth.response;
+    const code = decodeURIComponent(transferMatch[1]).toUpperCase();
+    const body = await req.json().catch(() => null) as { userId?:unknown } | null;
+    const targetId = typeof body?.userId === "string" ? body.userId : "";
+    const row = await env.HALLOCALL_DB.prepare(`SELECT id,host_id,status FROM calls WHERE code=?1 LIMIT 1`).bind(code).first<{id:string;host_id:string;status:string}>();
+    if (!row || row.status==="ended") return json({ error:"این کال دیگر فعال نیست." }, { status:404 });
+    if (row.host_id !== auth.user.id) return json({ error:"فقط میزبان می‌تواند میزبانی را واگذار کند." }, { status:403 });
+    if (!targetId || targetId === auth.user.id) return json({ error:"کاربر نامعتبر است." }, { status:400 });
+    let inRoom = false;
+    try {
+      const res = await env.CALL_ROOMS.get(env.CALL_ROOMS.idFromName(code)).fetch(new Request("https://call-room.local/state"));
+      const state = await res.json() as { participants?:Array<{id:string}> };
+      inRoom = (state.participants ?? []).some((p) => p.id === targetId);
+    } catch {}
+    if (!inRoom) return json({ error:"این کاربر الان در تماس نیست." }, { status:409 });
+    await setHost(row, code, targetId);
+    return json({ ok:true, hostId:targetId });
+  }
+
   const leaveMatch = path.match(/^\/api\/calls\/([^/]+)\/leave$/);
   if (leaveMatch && method === "POST") {
     const auth = await requireUser(env,req); if ("response" in auth) return auth.response;
     const code = decodeURIComponent(leaveMatch[1]).toUpperCase();
+    const body = await req.json().catch(() => null) as { transfer?:unknown } | null;
     const row = await env.HALLOCALL_DB.prepare(`SELECT id,host_id FROM calls WHERE code=?1 LIMIT 1`).bind(code).first<{id:string;host_id:string}>();
     if (row && row.host_id===auth.user.id) {
+      /* By default the host leaving ends the call. With {transfer:true} the call
+         continues and the longest-present participant becomes the new host. */
+      const successor = body?.transfer === true ? await pickSuccessor(code, auth.user.id) : null;
+      if (successor) {
+        await setHost(row, code, successor);
+        return json({ ok:true, hostId:successor });
+      }
       await env.HALLOCALL_DB.prepare(`UPDATE calls SET status='ended',ended_at=?1 WHERE id=?2`).bind(now(),row.id).run();
       const id = env.CALL_ROOMS.idFromName(code);
       const headers = new Headers({ "x-user-id": auth.user.id });
@@ -937,9 +1339,9 @@ export default {
         const user = await currentUser(env,req);
         if (!user) return new Response("Unauthorized", {status:401});
         const code = decodeURIComponent(url.pathname.split("/").pop() || "").toUpperCase();
-        const row = await env.HALLOCALL_DB.prepare(`SELECT id FROM calls WHERE code=?1 AND status<>'ended' LIMIT 1`).bind(code).first();
+        const row = await env.HALLOCALL_DB.prepare(`SELECT id,host_id FROM calls WHERE code=?1 AND status<>'ended' LIMIT 1`).bind(code).first<{id:string;host_id:string}>();
         if (!row) return new Response("Call not found", {status:404});
-        return callDO(env,code,req,user);
+        return callDO(env,code,req,user,row.host_id);
       }
       const assetResponse = await env.ASSETS.fetch(req);
       return assetResponse ?? new Response("Asset unavailable", { status:503 });

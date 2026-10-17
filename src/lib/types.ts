@@ -81,4 +81,29 @@ export type Participant = User & {
   sharing?: boolean;
   /** Browser page-session id; WebRTC links are bound to it (see lib/mesh.ts). */
   sid?: string;
+  /** When the hand was raised (ms since epoch); 0/undefined = hand down. Also the queue order. */
+  hand?: number;
+  /** True while this participant is recording the call on their own device. */
+  rec?: boolean;
+  /** When this person entered the room (used to pick the next host). */
+  joinedAt?: number;
+};
+
+/** Room-wide state published by the Durable Object with every presence update. */
+export type RoomInfo = {
+  hostId: string;
+  locked: boolean;
+  board: { open: boolean; drawers: "all" | "host" };
+};
+
+/** A call this account was in recently (the "join again" list). */
+export type RecentCall = {
+  code: string;
+  name: string;
+  status: "active" | "ended";
+  isHost: boolean;
+  hostUsername: string;
+  lastJoinedAt: number;
+  endedAt: number | null;
+  members: number;
 };
