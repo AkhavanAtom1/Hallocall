@@ -96,7 +96,9 @@ export function App() {
   useLiveRefresh(async()=>{ const d=await api.incoming(); setIncoming(d.calls[0]??null); },"incoming",{ enabled:!!user && route.page!=="call", fastMs:AUTO_REFRESH_MS, slowMs:SAFETY_REFRESH_MS });
   useEffect(()=>{ if(!toast) return; const id=setTimeout(()=>setToast(undefined),2500); return()=>clearTimeout(id); },[toast]);
 
-  const logout=async()=>{ await api.logout().catch(()=>{}); setUser(null); go("/login"); };
+  /* Clear the signed-in state first: that stops the presence heartbeat, the live channel and the
+     polling at once, so nothing keeps calling the API with a session that is about to disappear. */
+  const logout=async()=>{ setUser(null); setIncoming(null); go("/login"); await api.logout().catch(()=>{}); };
   const signIn=(u:User)=>{ setUser(u); go(takeReturnPath() ?? "/dashboard"); };
   const applyAvatar=async(avatarId:string)=>{ try{ const d=await api.profile(avatarId); setUser(d.user); setToast(`پروفایل ${avatarOf(avatarId).name} ذخیره شد`); return true; } catch(e){ setToast(e instanceof Error?e.message:"ذخیره نشد"); return false; } };
   const respondIncoming=async(action:"accept"|"decline")=>{

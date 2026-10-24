@@ -88,6 +88,10 @@ export function SettingsSheet({
           </div>
           <p className="sheet-hint">{captionsSupported() ? "تشخیص گفتار را خود مرورگر انجام می‌دهد؛ در Chrome صدای تو برای تبدیل به متن به سرویس گوگل فرستاده می‌شود و فقط از میکروفون پیش‌فرض مرورگر استفاده می‌کند. هنگامی که میکروفونت خاموش است چیزی شنیده نمی‌شود." : "این مرورگر تبدیل گفتار به متن را پشتیبانی نمی‌کند؛ فقط زیرنویسِ دیگران را می‌بینی (برای گفتار خودت Chrome یا Edge را امتحان کن)."}</p>
 
+          <h3>ایموجی</h3>
+          <label className="switch-row"><input type="checkbox" checked={prefs.showReactions} onChange={(event) => onPrefs({ showReactions: event.target.checked })} /><span>نمایش واکنش‌های بقیه روی آواتارها</span></label>
+          <label className="switch-row"><input type="checkbox" checked={prefs.animatedEmoji} onChange={(event) => onPrefs({ animatedEmoji: event.target.checked })} /><span>ایموجی‌های متحرک (برای صرفه‌جویی در اینترنت و باتری خاموش کن)</span></label>
+
           <h3>اشتراک صفحه</h3>
           <label className="switch-row"><input type="checkbox" checked={prefs.shareAudio} onChange={(event) => onPrefs({ shareAudio: event.target.checked })} /><span>پیشنهاد اشتراک صدای تب یا سیستم همراه با تصویر</span></label>
 
@@ -103,6 +107,8 @@ export function SettingsSheet({
           <dl className="shortcut-list">
             {SHORTCUTS.map(([key, text]) => <div key={key}><dt><kbd>{key}</kbd></dt><dd>{text}</dd></div>)}
           </dl>
+
+          <p className="emoji-credit">ایموجی‌های متحرک: «Noto Emoji Animation» از Google، با مجوز <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a>.</p>
         </div>
       </section>
     </div>

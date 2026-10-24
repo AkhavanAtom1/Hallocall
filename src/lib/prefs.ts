@@ -21,6 +21,10 @@ export type Prefs = {
   captionLang: string;
   /** Offer to share the tab/system sound together with the screen. */
   shareAudio: boolean;
+  /** Show other people's emoji reactions above their avatars. */
+  showReactions: boolean;
+  /** Animated emoji (turn off to save data/battery: plain system emoji are used instead). */
+  animatedEmoji: boolean;
   /** Volume (0..1) you chose for each person, keyed by user id. */
   volumes: Record<string, number>;
 };
@@ -39,6 +43,8 @@ export const DEFAULT_PREFS: Prefs = {
   captions: false,
   captionLang: "fa-IR",
   shareAudio: true,
+  showReactions: true,
+  animatedEmoji: true,
   volumes: {},
 };
 
@@ -69,6 +75,8 @@ export function sanitizePrefs(raw: unknown): Prefs {
     captions: bool(source.captions, DEFAULT_PREFS.captions),
     captionLang: typeof source.captionLang === "string" && /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})?$/.test(source.captionLang) ? source.captionLang : DEFAULT_PREFS.captionLang,
     shareAudio: bool(source.shareAudio, DEFAULT_PREFS.shareAudio),
+    showReactions: bool(source.showReactions, DEFAULT_PREFS.showReactions),
+    animatedEmoji: bool(source.animatedEmoji, DEFAULT_PREFS.animatedEmoji),
     volumes,
   };
 }

@@ -20,6 +20,8 @@ import { playSound } from "../lib/sounds";
 import { Captioner, captionsSupported } from "../lib/captions";
 import { buildTranscript, transcriptFileName } from "../lib/transcript";
 import type { TranscriptEntry } from "../lib/transcript";
+import { emojiOnly, isReactionEmoji, REACTION_PICKS } from "../lib/animatedEmoji";
+import { AnimatedEmoji, EmojiMotion, EmojiPicker, ReactionBurst } from "./AnimatedEmoji";
 import { AppAvatar } from "./AppAvatar";
 import { AvatarImage } from "./AvatarImage";
 import { CaptionsOverlay, PollCard, PollSheet, TimerChip, TimerSheet } from "./CallExtras";
@@ -36,7 +38,6 @@ import { ThemeControls } from "./ThemeControls";
 import { Whiteboard } from "./Whiteboard";
 import type { ColorThemeId } from "../lib/theme";
 
-const QUICK_EMOJIS = ["😂", "❤️", "👍", "🔥", "🎉", "😮", "👏", "🙌", "💯", "✨", "🥳", "👀"];
 const QUALITY_PRESETS = [
   { label: "کم", value: 20, hint: "اینترنت ضعیف" },
   { label: "متعادل", value: 50, hint: "پیشنهادی" },
@@ -57,9 +58,11 @@ type ChatMessage = {
   avatar: string;
   text: string;
   createdAt: number;
+  /** emoji → ids of the people who reacted with it */
+  reactions?: Record<string, string[]>;
 };
 
-type Reaction = { id: string; emoji: string; x: number };
+type Reaction = { id: string; emoji: string; uid: string; name: string; offset: number };
 type ConnectionState = "connecting" | "connected" | "reconnecting";
 type Panel = "chat" | "people" | null;
 type Popover = "emoji" | "quality" | "more" | null;
@@ -87,6 +90,9 @@ type RoomSocketMessage = {
   text?: string;
   final?: boolean;
   reason?: string;
+  userId?: string;
+  reactions?: Record<string, string[]>;
+  active?: boolean;
 };
 
 const EMPTY_ROOM: RoomInfo = { hostId: "", locked: false, board: { open: false, drawers: "all" }, shareMode: "all", timer: null };
@@ -235,6 +241,10 @@ export function CallPage({
   const [captionLines, setCaptionLines] = useState<CaptionLine[]>([]);
   const [timerSheet, setTimerSheet] = useState(false);
   const [pollSheet, setPollSheet] = useState(false);
+  const [chatEmojiOpen, setChatEmojiOpen] = useState(false);
+  const [inviteBarHidden, setInviteBarHidden] = useState(() => { try { return sessionStorage.getItem("hallocall-invite-bar-hidden") === "1"; } catch { return false; } });
+  const [msgPicker, setMsgPicker] = useState("");
+  const [typingUsers, setTypingUsers] = useState<Record<string, { name: string; until: number }>>({});
   const [inviteOpen, setInviteOpen] = useState(false);
 
   const active = joined && entered;
@@ -272,6 +282,10 @@ export function CallPage({
   const noticeTimer = useRef<number | null>(null);
   const chatListRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
+  /** Set while this person is leaving on purpose, so the "is the call still alive?" check cannot flash an error. */
+  const leavingRef = useRef(false);
+  const typingSentAt = useRef(0);
+  const typingIdle = useRef<number | null>(null);
   const reactionTimers = useRef(new Set<number>());
   const firstReadyDone = useRef(false);
   const boardStore = useRef(new BoardStore());
@@ -486,13 +500,16 @@ export function CallPage({
     }
   }, [getAudioContext, updateParticipants]);
 
-  const showReaction = useCallback((emoji: string) => {
+  const showReaction = useCallback((emoji: string, uid: string, name: string) => {
+    if (!isReactionEmoji(emoji)) return;
+    if (uid !== userRef.current.id && !prefsRef.current.showReactions) return;
     const id = newSessionId();
-    setReactions((current) => [...current, { id, emoji, x: 35 + Math.random() * 30 }].slice(-18));
+    const offset = Math.round((Math.random() - 0.5) * 44);
+    setReactions((current) => [...current, { id, emoji, uid, name, offset }].slice(-24));
     const timer = window.setTimeout(() => {
       setReactions((current) => current.filter((reaction) => reaction.id !== id));
       reactionTimers.current.delete(timer);
-    }, 2200);
+    }, 2600);
     reactionTimers.current.add(timer);
   }, []);
 
@@ -584,7 +601,7 @@ export function CallPage({
         if (alive) setCall(result.call);
       } catch (cause) {
         const message = cause instanceof Error ? cause.message : "";
-        if (alive && /دیگر فعال|فعال نیست|پیدا نشد|پایان رسیده/.test(message)) {
+        if (alive && !leavingRef.current && /دیگر فعال|فعال نیست|پیدا نشد|پایان رسیده/.test(message)) {
           endSession("این تماس به پایان رسیده یا دیگر در دسترس نیست.");
         }
       }
@@ -846,7 +863,21 @@ export function CallPage({
         return;
       }
 
-      if (message.type === "reaction" && message.emoji) { showReaction(message.emoji); return; }
+      if (message.type === "reaction" && message.emoji) { showReaction(message.emoji, message.uid ?? "", message.from ?? ""); return; }
+
+      if (message.type === "chat-reaction" && message.id && message.reactions) {
+        const target = message.id;
+        const next = message.reactions;
+        setMessages((current) => current.map((item) => item.id === target ? { ...item, reactions: next } : item));
+        return;
+      }
+
+      if (message.type === "typing" && message.userId) {
+        const who = message.userId;
+        if (message.active) setTypingUsers((current) => ({ ...current, [who]: { name: message.name ?? "", until: Date.now() + 3600 } }));
+        else setTypingUsers((current) => { if (!(who in current)) return current; const copy = { ...current }; delete copy[who]; return copy; });
+        return;
+      }
 
       /* ── whiteboard ── */
       if (message.type === "board-sync" && Array.isArray(message.strokes)) { boardStore.current.sync(message.strokes); return; }
@@ -1209,6 +1240,20 @@ export function CallPage({
     notify("این مرورگر نمی‌تواند گفتار تو را به متن تبدیل کند؛ فقط زیرنویس دیگران را می‌بینی. برای زیرنویس گفتار خودت Chrome یا Edge را امتحان کن.");
   }, [active, captionsOn, notify]);
 
+  /* "typing…" labels expire by themselves if the "stopped" message never arrives. */
+  const typingCount = Object.keys(typingUsers).length;
+  useEffect(() => {
+    if (!typingCount) return;
+    const timer = window.setInterval(() => {
+      const now = Date.now();
+      setTypingUsers((current) => {
+        const alive = Object.fromEntries(Object.entries(current).filter(([, value]) => value.until > now));
+        return Object.keys(alive).length === Object.keys(current).length ? current : alive;
+      });
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [typingCount]);
+
   /* Old caption lines disappear on their own. */
   useEffect(() => {
     if (!captionLines.length) return;
@@ -1403,6 +1448,7 @@ export function CallPage({
 
   const leave = async (options: { transfer?: boolean } = {}) => {
     if (leaving) return;
+    leavingRef.current = true;
     setLeaving(true);
     setLeaveDialog(false);
     reconnectAllowed.current = false;
@@ -1431,9 +1477,21 @@ export function CallPage({
     }
     setDraft("");
     setChatNotice("");
+    setChatEmojiOpen(false);
+    announceTyping("");
   };
 
   const react = (emoji: string) => { send({ type: "reaction", emoji }); };
+  const reactToMessage = (messageId: string, emoji: string) => { send({ type: "chat-react", id: messageId, emoji }); setMsgPicker(""); };
+
+  /** "X is typing…": announce at most every ~2.5 s while the draft changes, and say stop after a pause or a send. */
+  const announceTyping = (text: string) => {
+    if (typingIdle.current !== null) window.clearTimeout(typingIdle.current);
+    typingIdle.current = null;
+    if (!text.trim()) { if (typingSentAt.current) { send({ type: "typing", active: false }); typingSentAt.current = 0; } return; }
+    if (Date.now() - typingSentAt.current > 2500) { send({ type: "typing", active: true }); typingSentAt.current = Date.now(); }
+    typingIdle.current = window.setTimeout(() => { send({ type: "typing", active: false }); typingSentAt.current = 0; }, 3000);
+  };
 
   /* Latest handlers for the long-lived keyboard / media-session listeners. */
   const actions = useRef({ toggleMute, toggleHand, toggleScreenShare, requestLeave, applyMute });
@@ -1511,6 +1569,8 @@ export function CallPage({
       setPanel(null);
       setSettingsOpen(false);
       setLeaveDialog(false);
+      setChatEmojiOpen(false);
+      setMsgPicker("");
       setTimerSheet(false);
       setPollSheet(false);
       setInviteOpen(false);
@@ -1538,6 +1598,11 @@ export function CallPage({
     showCopyNotice(copied ? "کد ورود کپی شد" : `کد ورود: ${code}`);
   };
 
+  const hideInviteBar = (hidden: boolean) => {
+    setInviteBarHidden(hidden);
+    try { sessionStorage.setItem("hallocall-invite-bar-hidden", hidden ? "1" : "0"); } catch {}
+  };
+
   const copyInviteLink = async () => {
     const copied = await copyText(inviteLink);
     showCopyNotice(copied ? "لینک مستقیم کپی شد — هرکس بازش کند وارد همین تماس می‌شود" : inviteLink);
@@ -1549,6 +1614,7 @@ export function CallPage({
   const viewedScreen = sharerNow && sharerNow.id !== user.id ? remoteScreens[sharerNow.id] : undefined;
   const handOrder = new Map(participants.filter((participant) => (participant.hand ?? 0) > 0).sort((a, b) => (a.hand ?? 0) - (b.hand ?? 0)).map((participant, index) => [participant.id, index + 1]));
   const raisedCount = handOrder.size;
+  const typingNames = Object.values(typingUsers).map((entry) => entry.name).filter(Boolean).slice(0, 3);
   const micLabel = !microphoneReady ? "فعال‌سازی میکروفون" : me?.muted ? (prefs.pushToTalk ? "نگه‌دار Space" : "روشن‌کردن میکروفون") : "بی‌صدا کردن";
 
   if (error) return (
@@ -1576,6 +1642,7 @@ export function CallPage({
   );
 
   return (
+    <EmojiMotion.Provider value={prefs.animatedEmoji}>
     <main className="app-bg call-page">
       <Scene variant="call" />
       <header className="call-header">
@@ -1598,6 +1665,7 @@ export function CallPage({
           {networkLevel !== null && participants.length > 1 && <><small>•</small><span className="net-pill" title={`کیفیت اتصال: ${QUALITY_LABELS[networkLevel]}`}><SignalBars level={networkLevel} /></span></>}
         </div>
         <div className="call-head-actions">
+          {inviteBarHidden && <button type="button" className="icon-btn" onClick={() => void copyInviteLink()} title="کپی لینک دعوت" aria-label="کپی لینک دعوت"><Icon name="link" size={16} /></button>}
           {roomInfo.timer && <TimerChip timer={roomInfo.timer} onFinish={() => cue("timer", 0.2)} />}
           {roomInfo.locked && <span className="lock-chip" title="ورود تازه‌واردها بسته است"><Icon name="lock" size={13} /> قفل</span>}
           {recording && <span className="rec-chip" title="در حال ضبط روی دستگاه تو"><i /> ضبط <Elapsed since={recording.since} /></span>}
@@ -1623,7 +1691,7 @@ export function CallPage({
         />
       )}
 
-      <div className="invite-bar glass" role="region" aria-label="لینک مستقیم ورود به تماس">
+      {!inviteBarHidden && <div className="invite-bar glass" role="region" aria-label="لینک مستقیم ورود به تماس">
         <span className="invite-link-icon" aria-hidden="true"><Icon name="link" size={16} /></span>
         <div className="invite-link-copy">
           <b>لینک مستقیم ورود به این تماس</b>
@@ -1641,7 +1709,8 @@ export function CallPage({
         <button className="invite-link-btn" onClick={copyInviteLink} title="کپی لینک مستقیم">
           <Icon name={copyNotice ? "check" : "copy"} size={15} /> کپی لینک
         </button>
-      </div>
+        <button type="button" className="invite-close" onClick={() => hideInviteBar(true)} aria-label="پنهان کردن نوار لینک" title="پنهان کردن (برای فضای بیشتر)"><Icon name="x" size={15} /></button>
+      </div>}
 
       <section className={sharerNow ? "call-stage has-screen" : "call-stage"} aria-label="شرکت‌کنندگان تماس">
         {sharerNow && (
@@ -1665,10 +1734,11 @@ export function CallPage({
               handOrder={handOrder.get(participant.id)}
               level={participant.id === user.id ? undefined : qualityById[participant.id]?.level}
               locallyMuted={!!localMuted[participant.id]}
+              bursts={reactions.filter((reaction) => reaction.uid === participant.id)}
             />
           ))}
         </div>
-        {reactions.map((reaction) => <span key={reaction.id} className="reaction-float" style={{ left: `${reaction.x}%` }} aria-hidden="true">{reaction.emoji}</span>)}
+        {reactions.filter((reaction) => !participants.some((participant) => participant.id === reaction.uid)).map((reaction) => <ReactionBurst key={reaction.id} emoji={reaction.emoji} offset={reaction.offset * 4} orphan />)}
         {!participants.length && <div className="joining" role="status"><span className="spinner" /><p>در حال ورود به کال و آماده‌سازی میکروفون…</p></div>}
         {playbackBlocked && <button className="audio-unlock glass" onClick={enablePlayback}><Icon name="volume" size={17} /> فعال‌کردن صدای دریافتی</button>}
         {callNotice && <div className="call-notice glass" role="status" aria-live="polite"><Icon name="info" size={16} /><span>{callNotice}</span></div>}
@@ -1691,7 +1761,7 @@ export function CallPage({
               <p className="quality-help">این مقدار سقف بیت‌ریت صدای ارسالی شماست؛ کیفیت واقعی با توجه به شبکه و پشتیبانی مرورگر تغییر می‌کند.</p>
             </div>
           )}
-          {popover === "emoji" && <div className="popover emoji-pop" role="group" aria-label="واکنش‌های سریع">{QUICK_EMOJIS.map((emoji) => <button key={emoji} type="button" aria-label={`ارسال واکنش ${emoji}`} onClick={() => { react(emoji); setPopover(null); }}>{emoji}</button>)}</div>}
+          {popover === "emoji" && <div className="popover emoji-pop" role="group" aria-label="واکنش‌ها"><EmojiPicker label="واکنش‌های سریع" onPick={react} /></div>}
           {popover === "more" && (
             <div className="popover more-pop" role="menu" aria-label="گزینه‌های بیشتر">
               <button type="button" role="menuitem" onClick={() => setPopover("emoji")}><Icon name="smile" size={18} /><span>واکنش‌ها</span></button>
@@ -1736,19 +1806,45 @@ export function CallPage({
               stickToBottom.current = list.scrollHeight - list.scrollTop - list.clientHeight < 80;
             }}
           >
-            {messages.map((message) => (
-              <div key={message.id} className={message.userId === user.id ? "chat-msg mine" : "chat-msg"}>
-                <div className="chat-avatar" style={{ background: avatarOf(message.avatar).gradient }}><AvatarImage avatar={message.avatar} /></div>
-                <div className="chat-message-content">
-                  <div className="chat-message-meta"><span>{message.userId === user.id ? "شما" : message.username}</span><time dateTime={new Date(message.createdAt).toISOString()}>{chatTime(message.createdAt)}</time></div>
-                  <p><Linkified text={message.text} /></p>
+            {messages.map((message) => {
+              const big = emojiOnly(message.text);
+              const chips = Object.entries(message.reactions ?? {}).filter(([, who]) => who.length > 0);
+              return (
+                <div key={message.id} className={message.userId === user.id ? "chat-msg mine" : "chat-msg"}>
+                  <div className="chat-avatar" style={{ background: avatarOf(message.avatar).gradient }}><AvatarImage avatar={message.avatar} /></div>
+                  <div className="chat-message-content">
+                    <div className="chat-message-meta"><span>{message.userId === user.id ? "شما" : message.username}</span><time dateTime={new Date(message.createdAt).toISOString()}>{chatTime(message.createdAt)}</time></div>
+                    {big
+                      ? <div className="chat-big-emoji" aria-label={message.text}>{big.map((item, index) => <AnimatedEmoji key={index} emoji={item} size={big.length === 1 ? 84 : 60} />)}</div>
+                      : <p><Linkified text={message.text} /></p>}
+                    <div className="msg-reactions">
+                      {chips.map(([emoji, who]) => (
+                        <button key={emoji} type="button" className={who.includes(user.id) ? "msg-chip mine" : "msg-chip"} aria-pressed={who.includes(user.id)} aria-label={`${emoji} ${who.length}`} onClick={() => reactToMessage(message.id, emoji)}>
+                          <AnimatedEmoji emoji={emoji} size={18} /><span>{who.length}</span>
+                        </button>
+                      ))}
+                      <button type="button" className="msg-add-react" aria-label="افزودن واکنش به پیام" aria-expanded={msgPicker === message.id} onClick={() => setMsgPicker(msgPicker === message.id ? "" : message.id)}><Icon name="smile" size={14} /></button>
+                    </div>
+                    {msgPicker === message.id && (
+                      <div className="msg-picker" role="group" aria-label="واکنش به پیام">
+                        {REACTION_PICKS.map((item) => <button key={item.code} type="button" className="emoji-cell small" aria-label={item.emoji} title={item.name} onClick={() => reactToMessage(message.id, item.emoji)}><AnimatedEmoji emoji={item.emoji} size={28} /></button>)}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
             {!messages.length && <div className="chat-empty"><Icon name="message" size={28} /><p>هنوز پیامی نیست. شروع‌کنندهٔ گفت‌وگو باش.</p></div>}
           </div>
+          {typingNames.length > 0 && <p className="typing-line" role="status">{typingNames.join("، ")} {typingNames.length > 1 ? "در حال نوشتن هستند" : "در حال نوشتن است"}…</p>}
+          {chatEmojiOpen && (
+            <div className="chat-emoji-pop">
+              <EmojiPicker label="ایموجی برای پیام" onPick={(emoji) => { const next = (draft + emoji).slice(0, 500); setDraft(next); announceTyping(next); }} />
+            </div>
+          )}
           <form className="chat-compose" onSubmit={sendChat}>
-            <div className="chat-input-wrap"><input value={draft} onChange={(event) => setDraft(event.target.value.slice(0, 500))} placeholder="پیامت را بنویس…" maxLength={500} dir="auto" aria-label="متن پیام" autoComplete="off"/><small>{draft.length}/500</small></div>
+            <button type="button" className="chat-emoji-btn" aria-label="ایموجی" aria-expanded={chatEmojiOpen} title="ایموجی" onClick={() => setChatEmojiOpen((open) => !open)}><Icon name="smile" size={18} /></button>
+            <div className="chat-input-wrap"><input value={draft} onChange={(event) => { const next = event.target.value.slice(0, 500); setDraft(next); announceTyping(next); }} placeholder="پیامت را بنویس…" maxLength={500} dir="auto" aria-label="متن پیام" autoComplete="off"/><small>{draft.length}/500</small></div>
             <button type="submit" disabled={!draft.trim() || connection !== "connected"} aria-label="ارسال پیام" title="ارسال پیام"><Icon name="arrow" size={16} /></button>
           </form>
           {chatNotice && <p className="chat-notice" role="status">{chatNotice}</p>}
@@ -1830,6 +1926,7 @@ export function CallPage({
         </div>
       )}
     </main>
+    </EmojiMotion.Provider>
   );
 }
 
@@ -1875,7 +1972,7 @@ function ScreenView({ stream, sharer }: { stream?: MediaStream; sharer: string }
 }
 
 function ParticipantTile({
-  participant, self, hostId, handOrder, level, locallyMuted,
+  participant, self, hostId, handOrder, level, locallyMuted, bursts,
 }: {
   participant: Participant;
   self: boolean;
@@ -1883,6 +1980,7 @@ function ParticipantTile({
   handOrder?: number;
   level?: 0 | 1 | 2 | 3;
   locallyMuted: boolean;
+  bursts: Reaction[];
 }) {
   const avatar = avatarOf(participant.avatar);
   const state = participant.muted ? "muted" : participant.speaking ? "speaking" : "idle";
@@ -1893,7 +1991,8 @@ function ParticipantTile({
         {participant.muted && <span className="mute-badge" title="میکروفون بی‌صداست"><Icon name="micOff" size={13} /></span>}
         {participant.speaking && !participant.muted && <span className="speaking-dot" aria-label="در حال صحبت" />}
         {participant.sharing && <span className="share-badge" title="در حال اشتراک صفحه"><Icon name="screen" size={13} /></span>}
-        {handOrder ? <span className="hand-badge" title={`دست بالا — نوبت ${handOrder}`}>✋<b>{handOrder}</b></span> : null}
+        {handOrder ? <span className="hand-badge" title={`دست بالا — نوبت ${handOrder}`}><AnimatedEmoji emoji="✋" size={20} /><b>{handOrder}</b></span> : null}
+        {bursts.map((burst) => <ReactionBurst key={burst.id} emoji={burst.emoji} offset={burst.offset} />)}
       </div>
       <div className="participant-name"><b>{participant.username}</b>{self && <span>شما</span>}{participant.id === hostId && <span className="host-badge">میزبان</span>}{participant.rec && <span className="rec-badge"><i />ضبط</span>}{participant.muted && <em>بی‌صدا</em>}{locallyMuted && <em>برای تو بی‌صدا</em>}{!self && participant.connected===false && <span className="audio-status">در حال اتصال صدا</span>}{!self && level !== undefined && level < 3 && participant.connected !== false && <SignalBars level={level} />}</div>
     </div>

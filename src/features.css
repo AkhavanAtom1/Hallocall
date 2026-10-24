@@ -513,3 +513,110 @@ kbd { display: inline-block; min-width: 26px; padding: 2px 8px; text-align: cent
 .poll-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 11.5px; }
 .poll-host { display: inline-flex; gap: 6px; }
 @media (max-width: 760px) { .poll-card { top: 76px; } }
+
+/* ── v5: animated emoji, reactions on avatars, chat emoji ── */
+.emoji-wrap { position: relative; display: inline-grid; place-items: center; flex: 0 0 auto; line-height: 1; vertical-align: middle; }
+.emoji-glyph { display: grid; place-items: center; line-height: 1; font-family: "Noto Color Emoji", "Apple Color Emoji", "Segoe UI Emoji", sans-serif; }
+.emoji-anim { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0; user-select: none; -webkit-user-drag: none; pointer-events: none; }
+.emoji-anim.ready { opacity: 1; }
+
+.emoji-pop { display: block; width: min(344px, calc(100vw - 20px)); min-width: 0; padding: 8px; }
+.emoji-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; max-height: min(40vh, 300px); overflow: auto; }
+.emoji-pop .emoji-cell, .emoji-cell {
+  display: grid;
+  place-items: center;
+  width: auto;
+  height: auto;
+  min-height: 46px;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: inherit;
+  font-size: inherit;
+  cursor: pointer;
+}
+.emoji-cell:hover, .emoji-cell:focus-visible { background: rgba(255, 255, 255, .11); }
+.emoji-cell:active { background: rgba(var(--theme-primary-rgb), .3); }
+.emoji-cell.small { min-height: 34px; padding: 0 3px; }
+
+/* a reaction pops up over its sender's avatar (driven by the Web Animations API, not CSS animations) */
+.reaction-burst {
+  position: absolute;
+  top: -4px;
+  left: 50%;
+  z-index: 7;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, 0);
+  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, .45));
+  will-change: transform, opacity;
+}
+.reaction-burst.orphan { top: auto; bottom: 180px; }
+
+/* chat */
+.chat-big-emoji { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 0 4px; }
+.msg-reactions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 4px; }
+.msg-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 26px;
+  padding: 0 9px 0 6px;
+  border-radius: 99px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, .06);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.msg-chip.mine { border-color: rgba(var(--theme-primary-bright-rgb), .75); background: rgba(var(--theme-primary-rgb), .26); }
+.msg-add-react {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px dashed var(--line);
+  background: transparent;
+  color: var(--muted);
+  opacity: .5;
+  cursor: pointer;
+}
+.chat-msg:hover .msg-add-react, .msg-add-react:focus-visible, .msg-add-react[aria-expanded="true"] { opacity: 1; }
+.msg-picker { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 6px; padding: 6px; border-radius: 14px; border: 1px solid var(--line); background: rgba(255, 255, 255, .05); }
+.chat-emoji-pop { padding: 6px 8px; border-top: 1px solid var(--line); }
+.chat-emoji-pop .emoji-grid { max-height: 190px; grid-template-columns: repeat(7, 1fr); }
+.chat-emoji-btn {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  min-height: 44px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, .06);
+  color: var(--text);
+  cursor: pointer;
+}
+.typing-line { margin: 0; padding: 2px 14px 6px; font-size: 11.5px; color: var(--muted); }
+.emoji-credit { margin: 0; font-size: 11px; line-height: 1.8; color: var(--muted); }
+.emoji-credit a { color: var(--theme-primary-bright); }
+
+/* chat composer: the emoji button is a quiet secondary button; both buttons share one size */
+.chat-compose button { height: 44px; min-height: 44px; }
+.chat-compose .chat-emoji-btn {
+  width: 44px;
+  background: rgba(255, 255, 255, .06);
+  color: var(--text);
+  border: 1px solid var(--line);
+  box-shadow: none;
+}
+.chat-compose .chat-emoji-btn:hover { background: rgba(255, 255, 255, .12); box-shadow: none; transform: none; }
+.chat-compose .chat-emoji-btn[aria-expanded="true"] { background: rgba(var(--theme-primary-rgb), .26); border-color: rgba(var(--theme-primary-bright-rgb), .7); }
+
+.invite-close { flex: 0 0 auto; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; border: 1px solid var(--line); background: rgba(255, 255, 255, .05); color: var(--muted); cursor: pointer; padding: 0; }
+.invite-close:hover { color: var(--text); background: rgba(255, 255, 255, .1); }

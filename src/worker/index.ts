@@ -292,16 +292,28 @@ const TIMER_MAX_SECONDS = 6 * 3600;
 const POLL_MAX_OPTIONS = 6;
 const CAPTION_MAX_CHARS = 280;
 const CAPTION_MAX_PER_SECOND = 8;
+const REACTION_MAX_PER_SECOND = 6;
+const TYPING_MIN_GAP_MS = 800;
+const MESSAGE_REACTIONS_MAX_KINDS = 8;
+/** Only real emoji (no plain words) may travel as a reaction. */
+const EMOJI_RE = /\p{Extended_Pictographic}/u;
+function cleanEmoji(value: unknown): string {
+  if (typeof value !== "string") return "";
+  const text = value.trim();
+  return text.length > 0 && text.length <= 16 && EMOJI_RE.test(text) ? text : "";
+}
 
 export class CallRoom {
   private state: DurableObjectState;
-  private messages: Array<{ id:string; userId:string; username:string; avatar:string; text:string; createdAt:number }> = [];
+  private messages: Array<{ id:string; userId:string; username:string; avatar:string; text:string; createdAt:number; reactions?:Record<string,string[]> }> = [];
   private meta: RoomMeta = defaultMeta();
   private board: BoardStroke[] = [];
   private boardIndex = new Map<string, BoardStroke>();
   private boardChunks = 0;
   /** Caption rate limiting (in memory only; losing it on hibernation is harmless). */
   private captionWindow = new Map<string, { at: number; count: number }>();
+  private reactionWindow = new Map<string, { at: number; count: number }>();
+  private typingAt = new Map<string, number>();
   private loaded = false;
   private loading: Promise<void> | null = null;
 
@@ -941,18 +953,44 @@ export class CallRoom {
         return;
       }
 
-      if (msg.type === "reaction" && typeof msg.emoji === "string") {
-        this.broadcast({
-          type:"reaction",
-          emoji:msg.emoji.slice(0,8),
-          from:session.username,
-        });
+      if (msg.type === "reaction") {
+        const emoji = cleanEmoji(msg.emoji);
+        if (!emoji) return;
+        const slot = this.reactionWindow.get(session.id);
+        if (!slot || current - slot.at >= 1000) this.reactionWindow.set(session.id, { at: current, count: 1 });
+        else if (++slot.count > REACTION_MAX_PER_SECOND) return;
+        /* `uid` lets every client show the emoji on the sender's own tile. */
+        this.broadcast({ type:"reaction", emoji, from:session.username, uid:session.id });
+        return;
+      }
+
+      /* A reaction chip under one chat message (toggle: send again to take it back). */
+      if (msg.type === "chat-react") {
+        const emoji = cleanEmoji(msg.emoji);
+        const target = this.messages.find((item) => item.id === msg.id);
+        if (!emoji || !target) return;
+        const reactions = target.reactions ?? {};
+        const who = reactions[emoji] ?? [];
+        if (who.includes(session.id)) {
+          reactions[emoji] = who.filter((id) => id !== session.id);
+          if (!reactions[emoji].length) delete reactions[emoji];
+        } else {
+          if (!reactions[emoji] && Object.keys(reactions).length >= MESSAGE_REACTIONS_MAX_KINDS) return;
+          reactions[emoji] = [...who, session.id].slice(-MAX_CALL_PARTICIPANTS);
+        }
+        target.reactions = reactions;
+        await this.state.storage.put("messages", this.messages);
+        this.broadcast({ type:"chat-reaction", id:target.id, reactions });
         return;
       }
 
       if (msg.type === "typing") {
+        const last = this.typingAt.get(session.id) ?? 0;
+        const active = !!(msg.active ?? msg.payload);
+        if (active && current - last < TYPING_MIN_GAP_MS) return;
+        this.typingAt.set(session.id, current);
         this.broadcast(
-          { type:"typing", userId:session.id, active:!!msg.payload },
+          { type:"typing", userId:session.id, name:session.username, active },
           ws,
         );
       }

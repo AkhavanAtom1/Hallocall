@@ -4,9 +4,10 @@
   "version": "2.0.0",
   "type": "module",
   "scripts": {
-    "dev": "node scripts/build-avatars.mjs && vite",
+    "dev": "node scripts/build-avatars.mjs && node scripts/fetch-animated-emoji.mjs && vite",
     "worker:dev": "wrangler dev --ip 127.0.0.1 --port 8787",
-    "build": "node scripts/build-avatars.mjs && vite build",
+    "build": "node scripts/build-avatars.mjs && node scripts/fetch-animated-emoji.mjs && vite build",
+    "emoji:fetch": "node scripts/fetch-animated-emoji.mjs",
     "typecheck": "tsc --noEmit",
     "verify": "npm run typecheck && npm run build",
     "cf:dev": "npm run build && wrangler dev",
