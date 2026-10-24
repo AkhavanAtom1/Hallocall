@@ -79,6 +79,15 @@ Triggers: friend request / accept / remove, quick call invite, and the new in-ca
 
 `rateLimit(env, key, limit, windowMs)` keeps fixed-window counters in the `rate_limits` D1 table with one `INSERT … ON CONFLICT … RETURNING`. Keys: login per account+network (12 / 10 min) and per network (80 / 10 min), register per network (12 / hour), search per user (90 / min), friend requests (40 / hour), call creation and invites. It fails open if the database errors.
 
+### Emoji, reactions and the "lite" stylesheet (v5)
+
+`lite.css` deliberately disables **every** CSS animation (`animation: none !important`) to keep calls cheap next to a game. Anything that must move therefore uses the Web Animations API instead (`ReactionBurst` calls `element.animate()`), which that rule cannot cancel.
+
+- **Pack**: `src/lib/animatedEmoji.json` lists 48 emoji with their Noto file codes. `scripts/fetch-animated-emoji.mjs` (run by `npm run build` / `dev`, or alone with `npm run emoji:fetch`) downloads `…/notoemoji/latest/<code>/512.webp` into `public/emoji/<code>.webp`, resizing to 256 px when `sharp` is installed. Existing files are kept; failures only warn (`EMOJI_STRICT=1` makes them fatal).
+- **Runtime fallback chain** (`AnimatedEmoji`): `/emoji/<code>.webp` → Google CDN → plain system emoji. Failures are remembered per emoji, `prefers-reduced-motion` and the "animated emoji" setting skip images entirely, and the system glyph is shown while an image loads.
+- **Reactions**: the Durable Object accepts only strings containing an `Extended_Pictographic` character (≤ 16 UTF-16 units), limits each person to 6 per second and broadcasts `{type:"reaction", emoji, from, uid}`; the client renders the burst on that person's tile.
+- **Chat**: messages carry `reactions: { emoji: userId[] }` (toggle with `chat-react`, ≤ 8 kinds per message, stored with the message); `typing` is relayed with the sender's name and rate-limited to one "typing" per 800 ms. Emoji-only messages (1–3 grapheme clusters, via `Intl.Segmenter`) render as large animated stickers.
+
 ## Durable Object choice
 
 Each call code maps to one Durable Object name. This makes a call's state strongly consistent and isolated from unrelated calls. The Durable Object enforces the shared 20-participant room limit before accepting a WebSocket.
